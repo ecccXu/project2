@@ -2,12 +2,12 @@
 传感器管理控制器
 """
 from flask import Blueprint, request, jsonify
-from utils.response import success_response, error_response
-from services.sensor_service import (
+from backend.utils.response import success_response, error_response
+from backend.services.sensor_service import (
     get_sensor_list, add_sensor, delete_sensor, 
     update_sensor_status, get_sensor_config, update_sensor_config
 )
-from config.db_config import db
+from backend.config.db_config import db
 import re
 
 # 创建蓝图

@@ -2,8 +2,8 @@
 测试执行控制器
 """
 from flask import Blueprint, request
-from utils.response import success_response, error_response
-from services.test_execution_service import start_test, get_realtime_results
+from backend.utils.response import success_response, error_response
+from backend.services.test_execution_service import start_test, get_realtime_results
 from datetime import datetime
 
 # 创建蓝图

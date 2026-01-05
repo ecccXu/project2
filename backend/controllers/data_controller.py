@@ -2,8 +2,8 @@
 数据查询控制器
 """
 from flask import Blueprint, request, send_file, make_response
-from utils.response import success_response, error_response
-from services.data_service import query_test_results, query_sensor_data
+from backend.utils.response import success_response, error_response
+from backend.services.data_service import query_test_results, query_sensor_data
 from datetime import datetime
 import os
 from werkzeug.utils import secure_filename

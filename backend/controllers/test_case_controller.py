@@ -2,8 +2,8 @@
 测试用例控制器
 """
 from flask import Blueprint
-from utils.response import success_response, error_response
-from services.test_case_service import get_test_cases
+from backend.utils.response import success_response, error_response
+from backend.services.test_case_service import get_test_cases
 
 # 创建蓝图
 test_case_bp = Blueprint('test_case', __name__, url_prefix='/api/v1')

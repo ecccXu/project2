@@ -1,13 +1,13 @@
 """
 测试执行服务
 """
-from models import TestResult, Sensor, TestCase
-from config.db_config import db
+from backend.models import TestResult, Sensor, TestCase
+from backend.config.db_config import db
 from datetime import datetime
 import uuid
 import threading
 import time
-from services.system_service import update_system_status
+from backend.services.system_service import update_system_status
 import re
 
 

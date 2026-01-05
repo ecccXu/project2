@@ -27,13 +27,6 @@ const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const getSystemStatusColor = () => {
-    if (!systemStatus) return 'bg-gray-100 text-gray-800';
-    return systemStatus.systemStatus === 'online'
-      ? 'bg-green-100 text-green-800'
-      : 'bg-red-100 text-red-800';
-  };
-
   const getMqttStatusColor = () => {
     if (!systemStatus) return 'bg-gray-100 text-gray-800';
     return systemStatus.mqttConnectionStatus === 'connected'

@@ -1,8 +1,8 @@
 """
 MQTT配置服务
 """
-from models import MqttConfig
-from config.db_config import db
+from backend.models import MqttConfig
+from backend.config.db_config import db
 import paho.mqtt.client as mqtt
 import time
 

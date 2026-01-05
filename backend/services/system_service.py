@@ -1,10 +1,10 @@
 """
 系统状态服务
 """
-from models import SystemStatus, Sensor, TestResult
-from config.db_config import db
+from backend.models import SystemStatus, Sensor, TestResult
+from backend.config.db_config import db
 from datetime import datetime, timedelta
-from utils.response import success_response
+from backend.utils.response import success_response
 
 
 def get_system_status():

@@ -1,9 +1,9 @@
 """
 数据查询服务
 """
-from models import TestResult, SensorData
-from config.db_config import db
-from utils.response import paginate_response
+from backend.models import TestResult, SensorData
+from backend.config.db_config import db
+from backend.utils.response import paginate_response
 from datetime import datetime
 
 

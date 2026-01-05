@@ -2,8 +2,8 @@
 MQTT配置控制器
 """
 from flask import Blueprint, request
-from utils.response import success_response, error_response
-from services.mqtt_service import get_mqtt_config, update_mqtt_config, test_mqtt_connection
+from backend.utils.response import success_response, error_response
+from backend.services.mqtt_service import get_mqtt_config, update_mqtt_config, test_mqtt_connection
 
 # 创建蓝图
 mqtt_bp = Blueprint('mqtt', __name__, url_prefix='/api/v1')

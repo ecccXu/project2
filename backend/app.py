@@ -2,9 +2,8 @@
 Flask应用主入口
 """
 from flask import Flask
-from config import db, config
-from utils.error_handler import register_error_handlers
-from services.test_case_service import initialize_default_test_cases
+from backend.config import db, config
+from backend.utils.error_handler import register_error_handlers
 import os
 
 
@@ -31,6 +30,7 @@ def create_app(config_name='default'):
         db.create_all()
         
         # 初始化默认测试用例
+        from services.test_case_service import initialize_default_test_cases
         initialize_default_test_cases()
     
     return app

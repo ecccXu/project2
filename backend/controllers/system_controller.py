@@ -2,8 +2,8 @@
 系统状态控制器
 """
 from flask import Blueprint
-from utils.response import success_response
-from services.system_service import get_system_status
+from backend.utils.response import success_response
+from backend.services.system_service import get_system_status
 
 # 创建蓝图
 system_bp = Blueprint('system', __name__, url_prefix='/api/v1')

@@ -2,7 +2,7 @@
 错误处理模块
 """
 from flask import jsonify
-from utils.response import error_response
+from backend.utils.response import error_response
 import logging
 
 # 配置日志

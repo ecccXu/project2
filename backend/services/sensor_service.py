@@ -1,8 +1,8 @@
 """
 传感器管理服务
 """
-from models import Sensor, SensorConfig
-from config.db_config import db
+from backend.models import Sensor, SensorConfig
+from backend.config.db_config import db
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 import uuid
