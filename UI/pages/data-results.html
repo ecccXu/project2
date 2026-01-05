@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据与结果 | CarTest MQTT</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 (与dashboard.html相同) -->
+        <aside class="sidebar">
+            <div class="logo"><h1>CarTest MQTT</h1></div>
+            <ul class="nav-list">
+                <li class="nav-item"><a href="#" class="nav-link"><i class="fa-solid fa-gauge-high"></i>仪表盘</a></li>
+                <li class="nav-item"><a href="#" class="nav-link"><i class="fa-solid fa-microchip"></i>传感器配置</a></li>
+                <li class="nav-item"><a href="#" class="nav-link"><i class="fa-solid fa-network-wired"></i>MQTT配置</a></li>
+                <li class="nav-item"><a href="#" class="nav-link"><i class="fa-solid fa-flask-vial"></i>测试执行</a></li>
+                <li class="nav-item"><a href="#" class="nav-link active"><i class="fa-solid fa-database"></i>数据与结果</a></li>
+            </ul>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="header">
+                <div></div>
+            </header>
+            <div class="content-wrapper">
+                <h2 class="page-title">历史数据与测试结果</h2>
+
+                <div class="toolbar">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <label class="form-label" style="margin-bottom: 0;">传感器:</label>
+                        <select class="form-control" style="width: auto;">
+                            <option value="all">全部</option>
+                            <option value="DHT11-001">DHT11-001</option>
+                        </select>
+                        <label class="form-label" style="margin-bottom: 0;">时间范围:</label>
+                        <input type="date" class="form-control" style="width: auto;">
+                        <span style="align-self: center;">至</span>
+                        <input type="date" class="form-control" style="width: auto;">
+                        <button class="btn btn-outline"><i class="fa-solid fa-filter"></i> 筛选</button>
+                    </div>
+                    <div class="toolbar-actions">
+                        <button class="btn btn-outline"><i class="fa-solid fa-file-export"></i> 导出Excel</button>
+                        <button class="btn btn-outline"><i class="fa-solid fa-chart-line"></i> 生成图表</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">历史测试结果</h3>
+                    </div>
+                    <div class="table-container">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>测试ID</th>
+                                    <th>传感器ID</th>
+                                    <th>测试用例</th>
+                                    <th>测试结果</th>
+                                    <th>测试时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>T-20231027-015</td>
+                                    <td>DHT11-001</td>
+                                    <td>TC-001: 温度范围校验</td>
+                                    <td><span class="tag tag-success">通过</span></td>
+                                    <td>2023-10-27 10:35:22</td>
+                                    <td><button class="btn btn-outline" style="padding: 4px 8px; font-size: 12px;">查看详情</button></td>
+                                </tr>
+                                <tr>
+                                    <td>T-20231027-014</td>
+                                    <td>DHT11-001</td>
+                                    <td>TC-002: 湿度范围校验</td>
+                                    <td><span class="tag tag-success">通过</span></td>
+                                    <td>2023-10-27 10:35:22</td>
+                                    <td><button class="btn btn-outline" style="padding: 4px 8px; font-size: 12px;">查看详情</button></td>
+                                </tr>
+                                <tr>
+                                    <td>T-20231027-013</td>
+                                    <td>DHT11-001</td>
+                                    <td>TC-003: 数据格式校验</td>
+                                    <td><span class="tag tag-success">通过</span></td>
+                                    <td>2023-10-27 10:35:21</td>
+                                    <td><button class="btn btn-outline" style="padding: 4px 8px; font-size: 12px;">查看详情</button></td>
+                                </tr>
+                                <tr>
+                                    <td>T-20231027-012</td>
+                                    <td>DHT11-001</td>
+                                    <td>TC-001: 温度范围校验</td>
+                                    <td><span class="tag tag-danger">失败</span></td>
+                                    <td>2023-10-27 10:35:20</td>
+                                    <td><button class="btn btn-outline" style="padding: 4px 8px; font-size: 12px;">查看详情</button></td>
+                                </tr>
+                                <!-- 更多行... -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">原始传感器数据</h3>
+                    </div>
+                    <div class="table-container">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>数据ID</th>
+                                    <th>传感器ID</th>
+                                    <th>温度 (°C)</th>
+                                    <th>湿度 (%)</th>
+                                    <th>接收时间</th>
+                                    <th>数据来源</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>D-20231027-0456</td>
+                                    <td>DHT11-001</td>
+                                    <td>25.3</td>
+                                    <td>48.1</td>
+                                    <td>2023-10-27 10:35:22</td>
+                                    <td><span class="tag tag-default">模拟</span></td>
+                                </tr>
+                                <tr>
+                                    <td>D-20231027-0455</td>
+                                    <td>DHT11-001</td>
+                                    <td>-41.0</td>
+                                    <td>50.0</td>
+                                    <td>2023-10-27 10:35:20</td>
+                                    <td><span class="tag tag-default">模拟</span></td>
+                                </tr>
+                                <tr>
+                                    <td>D-20231027-0454</td>
+                                    <td>DHT11-001</td>
+                                    <td>24.9</td>
+                                    <td>48.5</td>
+                                    <td>2023-10-27 10:35:18</td>
+                                    <td><span class="tag tag-default">模拟</span></td>
+                                </tr>
+                                <!-- 更多行... -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

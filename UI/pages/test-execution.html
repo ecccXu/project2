@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试执行 | CarTest MQTT</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 (与dashboard.html相同) -->
+        <aside class="sidebar">
+            <div class="logo"><h1>CarTest MQTT</h1></div>
+            <ul class="nav-list">
+                <li class="nav-item"><a href="#" class="nav-link"><i class="fa-solid fa-gauge-high"></i>仪表盘</a></li>
+                <li class="nav-item"><a href="#" class="nav-link"><i class="fa-solid fa-microchip"></i>传感器配置</a></li>
+                <li class="nav-item"><a href="#" class="nav-link"><i class="fa-solid fa-network-wired"></i>MQTT配置</a></li>
+                <li class="nav-item"><a href="#" class="nav-link active"><i class="fa-solid fa-flask-vial"></i>测试执行</a></li>
+                <li class="nav-item"><a href="#" class="nav-link"><i class="fa-solid fa-database"></i>数据与结果</a></li>
+            </ul>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="header">
+                <div></div>
+            </header>
+            <div class="content-wrapper">
+                <h2 class="page-title">测试执行</h2>
+
+                <div class="toolbar">
+                    <div>
+                        <label class="form-label" style="display: inline-block; margin-right: 10px;">选择传感器:</label>
+                        <select class="form-control" style="width: auto; display: inline-block;">
+                            <option value="all">所有已连接传感器</option>
+                            <option value="DHT11-001">DHT11-001</option>
+                            <option value="DHT11-002">DHT11-002</option>
+                        </select>
+                    </div>
+                    <div class="toolbar-actions">
+                        <button class="btn btn-outline"><i class="fa-solid fa-file-export"></i> 导出报告</button>
+                        <button class="btn btn-primary"><i class="fa-solid fa-play"></i> 开始测试</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">测试用例列表</h3>
+                    </div>
+                    <div class="table-container">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="selectAll"></th>
+                                    <th>用例ID</th>
+                                    <th>用例名称</th>
+                                    <th>测试类型</th>
+                                    <th>描述</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><input type="checkbox" checked></td>
+                                    <td>TC-001</td>
+                                    <td>温度范围校验</td>
+                                    <td>功能测试</td>
+                                    <td>校验温度值是否在车载工作范围 [-40℃, 85℃] 内。</td>
+                                </tr>
+                                <tr>
+                                    <td><input type="checkbox" checked></td>
+                                    <td>TC-002</td>
+                                    <td>湿度范围校验</td>
+                                    <td>功能测试</td>
+                                    <td>校验湿度值是否在有效范围 [0%, 100%] 内。</td>
+                                </tr>
+                                <tr>
+                                    <td><input type="checkbox" checked></td>
+                                    <td>TC-003</td>
+                                    <td>数据格式校验</td>
+                                    <td>功能测试</td>
+                                    <td>校验接收的数据是否为合法的JSON格式，并包含必要字段。</td>
+                                </tr>
+                                <tr>
+                                    <td><input type="checkbox"></td>
+                                    <td>TC-004</td>
+                                    <td>MQTT QoS 1 可靠性测试</td>
+                                    <td>协议测试</td>
+                                    <td>模拟网络中断，验证QoS 1级别下消息的送达性。</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">实时测试结果</h3>
+                    </div>
+                    <div class="table-container">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>时间戳</th>
+                                    <th>传感器ID</th>
+                                    <th>测试用例</th>
+                                    <th>测试结果</th>
+                                    <th>详细信息</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>10:35:22</td>
+                                    <td>DHT11-001</td>
+                                    <td>TC-001: 温度范围校验</td>
+                                    <td><span class="tag tag-success">通过</span></td>
+                                    <td>温度 25.3℃ 在 [-40, 85] 范围内。</td>
+                                </tr>
+                                <tr>
+                                    <td>10:35:22</td>
+                                    <td>DHT11-001</td>
+                                    <td>TC-002: 湿度范围校验</td>
+                                    <td><span class="tag tag-success">通过</span></td>
+                                    <td>湿度 48.1% 在 [0, 100] 范围内。</td>
+                                </tr>
+                                <tr>
+                                    <td>10:35:21</td>
+                                    <td>DHT11-001</td>
+                                    <td>TC-003: 数据格式校验</td>
+                                    <td><span class="tag tag-success">通过</span></td>
+                                    <td>JSON格式正确，字段完整。</td>
+                                </tr>
+                                <tr>
+                                    <td>10:35:20</td>
+                                    <td>DHT11-001</td>
+                                    <td>TC-001: 温度范围校验</td>
+                                    <td><span class="tag tag-danger">失败</span></td>
+                                    <td>温度 -41.0℃ 小于最小值 -40℃。</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
