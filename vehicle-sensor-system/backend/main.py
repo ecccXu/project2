@@ -8,8 +8,9 @@ import sys
 from fastapi import FastAPI
 from paho.mqtt import client as mqtt_client
 from sqlalchemy.orm import Session
+from fastapi.middleware.cors import CORSMiddleware
 
-# 导入我们刚才写的数据库模块
+# 导入数据库模块
 from database import SessionLocal, engine, Base
 from models import SensorData
 
@@ -34,7 +35,15 @@ Base.metadata.create_all(bind=engine)
 logger.info("✅ 数据库表结构检查完成")
 
 app = FastAPI()
-
+# --- 配置跨域 ---
+origins = ["*"] # 允许所有来源，开发阶段方便
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- 核心功能：自动化测试引擎 ---
 def test_engine(data: dict):
@@ -139,6 +148,19 @@ def get_history(limit: int = 20):
     try:
         # 按时间倒序，取最近的20条
         data = db.query(SensorData).order_by(SensorData.create_time.desc()).limit(limit).all()
+        return data
+    finally:
+        db.close()
+
+@app.get("/api/realtime")
+def get_realtime():
+    """
+    获取最新的一条数据，用于仪表盘展示
+    """
+    db = SessionLocal()
+    try:
+        # 查询数据库最新的一条
+        data = db.query(SensorData).order_by(SensorData.create_time.desc()).first()
         return data
     finally:
         db.close()

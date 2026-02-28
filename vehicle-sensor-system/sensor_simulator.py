@@ -29,7 +29,7 @@ def on_connect(client, userdata, flags, rc):
 def generate_sensor_data():
     """
     生成模拟传感器数据
-    包含：温度、湿度、振动加速度
+    包含：温度、湿度、振动加速度node
     """
     # 模拟基础温度 (正弦波动 + 随机噪声)
     base_temp = 25 + 3 * math.sin(time.time() / 10)
