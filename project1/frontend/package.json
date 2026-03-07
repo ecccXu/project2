@@ -1,0 +1,35 @@
+{
+  "name": "cartest-mqtt-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "format": "prettier --write src/**/*.{ts,tsx,css,md}",
+    "test-api": "node --experimental-modules test-api.js"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.8.1",
+    "zustand": "^4.3.2",
+    "axios": "^1.3.4",
+    "mqtt": "^4.3.7",
+    "tailwindcss": "^3.2.7",
+    "clsx": "^1.2.1",
+    "react-icons": "^4.8.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.27",
+    "@types/react-dom": "^18.0.10",
+    "@vitejs/plugin-react": "^3.1.0",
+    "typescript": "^4.9.3",
+    "vite": "^4.1.0",
+    "@types/node": "^18.14.0",
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.21"
+  }
+}
