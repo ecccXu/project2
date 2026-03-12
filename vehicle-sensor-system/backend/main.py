@@ -5,10 +5,15 @@ import json
 import threading
 import logging
 import sys
+import os
 from fastapi import FastAPI
 from paho.mqtt import client as mqtt_client
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
+
+# 引入解密工具
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from crypto_utils import decrypt_data
 
 # 导入数据库模块
 from database import SessionLocal, engine, Base
@@ -83,35 +88,56 @@ def on_connect(client, userdata, flags, rc):
 
 
 def on_message(client, userdata, msg):
+    """
+    当收到 MQTT 消息时的回调函数
+    包含：解密 -> 解析 -> 测试引擎校验 -> 入库
+    """
     try:
-        payload = msg.payload.decode()
-        data = json.loads(payload)
+        # 1. 获取原始载荷 (现在是 Base64 编码的密文)
+        encrypted_payload = msg.payload.decode()
 
-        # 1. 运行测试引擎
+        # 2. 【安全模块】解密数据
+        decrypted_json = decrypt_data(encrypted_payload)
+
+        # 3. 容错处理：如果解密失败，记录错误并丢弃数据
+        if decrypted_json is None:
+            logger.error("❌ [安全模块] 解密失败！数据可能被篡改或密钥不匹配。")
+            return
+
+        # 4. 解析 JSON 数据
+        data = json.loads(decrypted_json)
+
+        # 5. 运行自动化测试引擎
+        # 注意：这里必须接收两个返回值
         is_abnormal, error_msg = test_engine(data['data'])
 
-        # 2. 存入数据库
-        db: Session = SessionLocal()
+        # 6. 存入数据库
+        db = SessionLocal()
         try:
             db_data = SensorData(
                 device_id=data['device_id'],
                 temperature=data['data']['temperature'],
                 humidity=data['data']['humidity'],
-                is_abnormal=is_abnormal,
+                is_abnormal=is_abnormal,  # 这里必须是 True/False，不能是字符串
                 error_msg=error_msg
             )
             db.add(db_data)
             db.commit()
 
-            # 打印日志，异常数据高亮显示
+            # 7. 打印日志
             status = "🚨 异常" if is_abnormal else "✅ 正常"
-            logger.info(f"📥 收到数据: {data['data']['temperature']}℃ | 判定: {status} {error_msg or ''}")
+            temp = data['data']['temperature']
+            logger.info(f"📥 [解密成功] 温度: {temp}℃ | 判定: {status} {error_msg or ''}")
 
         finally:
             db.close()
 
+    except json.JSONDecodeError:
+        logger.error("❌ 数据解析失败：解密后的内容不是有效的 JSON 格式")
+    except KeyError as e:
+        logger.error(f"❌ 数据字段缺失: {e}")
     except Exception as e:
-        logger.error(f"❌ 处理消息出错: {e}")
+        logger.error(f"❌ 处理消息时发生未知错误: {e}")
 
 
 def mqtt_thread_task():
