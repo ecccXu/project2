@@ -1,6 +1,7 @@
 # backend/main.py
 
 import asyncio
+import datetime
 import json
 import threading
 import logging
@@ -27,6 +28,13 @@ CLIENT_ID = "Backend_Server_01"
 # --- 全局状态：用于丢包检测 ---
 # 结构: { "设备ID": 上一次收到的时间戳 }
 device_last_timestamp = {}
+# --- 全局状态：用于测试任务管理 ---
+test_session = {
+    "is_active": False,       # 测试是否正在进行
+    "start_time": None,       # 测试开始时间
+    "total_count": 0,         # 本次测试总条数
+    "abnormal_count": 0,      # 本次异常条数
+}
 # ===========================================
 
 # --- 配置日志 ---
@@ -92,23 +100,22 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     """
-    当收到 MQTT 消息时的回调函数
-    包含：解密 -> 丢包检测 -> 测试引擎校验 -> 入库
+    核心回调函数：解密 -> 连续性检测 -> 内容校验 -> 任务状态判断 -> 加密存储
     """
-    global device_last_timestamp
+    global device_last_timestamp, test_session
 
     try:
-        # 1. 获取原始载荷并解密
+        # ================= 1. 安全模块：解密 =================
         encrypted_payload = msg.payload.decode()
         decrypted_json = decrypt_data(encrypted_payload)
 
         if decrypted_json is None:
-            logger.error("❌ [安全模块] 解密失败！")
+            logger.error("❌ [安全模块] 解密失败！数据可能被篡改。")
             return
 
         data = json.loads(decrypted_json)
 
-        # 2. 【新增】通信连续性检测 (丢包率检测)
+        # ================= 2. 通信连续性检测 (丢包率) =================
         current_device_id = data['device_id']
         current_timestamp = data['timestamp']
 
@@ -116,20 +123,19 @@ def on_message(client, userdata, msg):
 
         if current_device_id in device_last_timestamp:
             last_ts = device_last_timestamp[current_device_id]
-            # 计算时间差 (秒)
             diff = current_timestamp - last_ts
 
-            # 阈值设定：正常间隔2秒，如果大于5秒则判定为异常(允许一定网络抖动)
+            # 阈值设定：正常2秒，超过5秒判定为丢包
             if diff > 5:
-                continuity_errors.append(f"通信不连续: 间隔{diff}秒 (可能丢包)")
+                continuity_errors.append(f"通信不连续: 间隔{diff}秒")
 
-        # 更新该设备的最后时间戳
+        # 更新最后时间戳
         device_last_timestamp[current_device_id] = current_timestamp
 
-        # 3. 运行自动化测试引擎 (数据内容校验)
+        # ================= 3. 自动化测试引擎 (内容校验) =================
         is_abnormal_content, error_msg_content = test_engine(data['data'])
 
-        # 4. 合并所有的错误信息
+        # 合并所有错误信息
         all_errors = continuity_errors
         if error_msg_content:
             all_errors.append(error_msg_content)
@@ -137,32 +143,52 @@ def on_message(client, userdata, msg):
         final_is_abnormal = len(all_errors) > 0
         final_error_msg = "; ".join(all_errors)
 
-        # 5. 存入数据库
-        db = SessionLocal()
-        try:
-            # 加密存储数值
-            encrypted_temp = encrypt_data(str(data['data']['temperature']))
-            encrypted_hum = encrypt_data(str(data['data']['humidity']))
+        # ================= 4. 测试任务管理与入库 =================
+        # 只有当测试任务开启时，才进行入库统计
+        if test_session["is_active"]:
+            # 更新全局统计
+            test_session["total_count"] += 1
+            if final_is_abnormal:
+                test_session["abnormal_count"] += 1
 
-            db_data = SensorData(
-                device_id=current_device_id,
-                temperature=encrypted_temp,
-                humidity=encrypted_hum,
-                is_abnormal=final_is_abnormal,
-                error_msg=final_error_msg
-            )
-            db.add(db_data)
-            db.commit()
+            # 数据库操作
+            db = SessionLocal()
+            try:
+                # 【存储加密】将数值转为字符串后加密
+                plain_temp = str(data['data']['temperature'])
+                plain_hum = str(data['data']['humidity'])
 
-            # 日志打印
-            status = "🚨 异常" if final_is_abnormal else "✅ 正常"
-            logger.info(f"📥 [收到] 温度: {data['data']['temperature']}℃ | 判定: {status} {final_error_msg or ''}")
+                encrypted_temp = encrypt_data(plain_temp)
+                encrypted_hum = encrypt_data(plain_hum)
 
-        finally:
-            db.close()
+                db_data = SensorData(
+                    device_id=current_device_id,
+                    temperature=encrypted_temp,
+                    humidity=encrypted_hum,
+                    is_abnormal=final_is_abnormal,
+                    error_msg=final_error_msg
+                )
+                db.add(db_data)
+                db.commit()
 
+                # 打印日志
+                status = "🚨 异常" if final_is_abnormal else "✅ 正常"
+                logger.info(f"📥 [测试中] 温度: {plain_temp}℃ | 判定: {status} {final_error_msg or ''}")
+
+            except Exception as db_err:
+                logger.error(f"❌ 数据库写入错误: {db_err}")
+            finally:
+                db.close()
+        else:
+            # 测试未开启，仅打印日志不入库
+            logger.info(f"⏸️ [待机] 忽略数据: {data['data']['temperature']}℃")
+
+    except json.JSONDecodeError:
+        logger.error("❌ 数据解析失败：非JSON格式")
+    except KeyError as e:
+        logger.error(f"❌ 数据字段缺失: {e}")
     except Exception as e:
-        logger.error(f"❌ 处理消息出错: {e}")
+        logger.error(f"❌ 处理消息时发生未知错误: {e}")
 
 def mqtt_thread_task():
     client = mqtt_client.Client(CLIENT_ID)
@@ -257,3 +283,62 @@ def get_history(limit: int = 20):
         return result
     finally:
         db.close()
+
+
+# --- 测试任务管理接口 ---
+
+@app.post("/api/test/start")
+def start_test():
+    """
+    开始测试任务
+    """
+    if test_session["is_active"]:
+        return {"message": "测试已在进行中", "status": "error"}
+
+    test_session["is_active"] = True
+    test_session["start_time"] = datetime.datetime.now()
+    test_session["total_count"] = 0
+    test_session["abnormal_count"] = 0
+
+    logger.info("🚀 测试任务已开始！")
+    return {"message": "测试开始", "start_time": test_session["start_time"]}
+
+
+@app.post("/api/test/stop")
+def stop_test():
+    """
+    结束测试任务并生成报告
+    """
+    if not test_session["is_active"]:
+        return {"message": "没有正在进行的测试", "status": "error"}
+
+    test_session["is_active"] = False
+    end_time = datetime.datetime.now()
+
+    # 计算通过率
+    total = test_session["total_count"]
+    abnormal = test_session["abnormal_count"]
+    pass_rate = ((total - abnormal) / total * 100) if total > 0 else 0
+
+    report = {
+        "start_time": test_session["start_time"],
+        "end_time": end_time,
+        "total_count": total,
+        "abnormal_count": abnormal,
+        "pass_rate": round(pass_rate, 2)
+    }
+
+    logger.info(f"🛑 测试任务结束！通过率: {pass_rate}%")
+    return report
+
+
+@app.get("/api/test/status")
+def get_test_status():
+    """
+    获取当前测试状态
+    """
+    return {
+        "is_active": test_session["is_active"],
+        "total_count": test_session["total_count"],
+        "abnormal_count": test_session["abnormal_count"]
+    }

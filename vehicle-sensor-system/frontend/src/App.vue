@@ -236,7 +236,34 @@ const updateLineChart = (data) => {
     series: [{ data: temps }]
   })
 }
-// --- 生命周期 ---
+
+// 测试任务状态
+const testStatus = ref({
+  is_active: false,
+  total_count: 0
+})
+
+// 开始测试
+const startTest = async () => {
+  await axios.post(`${API_BASE}/api/test/start`)
+  refreshStatus()
+}
+
+// 结束测试
+const stopTest = async () => {
+  const res = await axios.post(`${API_BASE}/api/test/stop`)
+  alert(`测试结束！\n总数据: ${res.data.total_count}条\n通过率: ${res.data.pass_rate}%`)
+  refreshStatus()
+  fetchHistory() // 刷新表格
+}
+
+// 获取状态
+const refreshStatus = async () => {
+  const res = await axios.get(`${API_BASE}/api/test/status`)
+  testStatus.value = res.data
+}
+
+// 在 onMounted 中加入状态轮询
 onMounted(() => {
   initChart()        // 初始化仪表盘
   initLineChart()    // 初始化折线图
@@ -248,6 +275,9 @@ onMounted(() => {
     fetchRealtime()
     fetchHistory()
   }, 2000)
+
+  refreshStatus()
+  setInterval(refreshStatus, 1000) // 每秒刷新一次状态
 })
 
 onUnmounted(() => {
@@ -269,7 +299,42 @@ onUnmounted(() => {
         导出测试报告
       </el-button>
     </div>
-
+    <!-- 测试控制台 -->
+    <el-row :gutter="20" style="margin-bottom: 20px;">
+      <el-col :span="24">
+        <el-card shadow="hover" style="background: #fff;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-weight: bold; margin-right: 20px;">测试状态：</span>
+              <el-tag :type="testStatus.is_active ? 'success' : 'info'" size="large">
+                {{ testStatus.is_active ? '测试进行中...' : '待机中' }}
+              </el-tag>
+              <span style="margin-left: 20px; color: #666;">
+                已采集数据: {{ testStatus.total_count }} 条
+              </span>
+            </div>
+            <div>
+              <el-button
+                type="success"
+                size="large"
+                @click="startTest"
+                :disabled="testStatus.is_active"
+                icon="VideoPlay">
+                开始测试
+              </el-button>
+              <el-button
+                type="danger"
+                size="large"
+                @click="stopTest"
+                :disabled="!testStatus.is_active"
+                icon="VideoPause">
+                结束测试
+              </el-button>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
     <!-- 核心展示区 -->
     <el-row :gutter="20" style="margin-top: 20px;">
 

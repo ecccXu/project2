@@ -4,8 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="06a1c691-4a66-4a19-adda-b250ff963c88" name="更改" comment="- 完善数据安全功能">
+    <list default="true" id="06a1c691-4a66-4a19-adda-b250ff963c88" name="更改" comment="- 完善功能：丢包率">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../vehicle-sensor-system/backend/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/../vehicle-sensor-system/backend/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../vehicle-sensor-system/frontend/src/App.vue" beforeDir="false" afterPath="$PROJECT_DIR$/../vehicle-sensor-system/frontend/src/App.vue" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -184,7 +186,7 @@
       <workItem from="1773317492632" duration="57000" />
       <workItem from="1773317562350" duration="2979000" />
       <workItem from="1773400460113" duration="214000" />
-      <workItem from="1773401004592" duration="1496000" />
+      <workItem from="1773401004592" duration="2692000" />
     </task>
     <task id="LOCAL-00001" summary="- 新项目提交">
       <option name="closed" value="true" />
@@ -218,7 +220,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773402489244</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="- 完善功能：丢包率">
+      <option name="closed" value="true" />
+      <created>1773402738174</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1773402738174</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -255,7 +265,8 @@
     <MESSAGE value="- 提交" />
     <MESSAGE value="- 提交修改" />
     <MESSAGE value="- 完善数据安全功能" />
-    <option name="LAST_COMMIT_MESSAGE" value="- 完善数据安全功能" />
+    <MESSAGE value="- 完善功能：丢包率" />
+    <option name="LAST_COMMIT_MESSAGE" value="- 完善功能：丢包率" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/project2$sensor_simulator.coverage" NAME="sensor_simulator 覆盖结果" MODIFIED="1772277623417" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/../vehicle-sensor-system" />
