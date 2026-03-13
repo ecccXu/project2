@@ -17,9 +17,16 @@ const API_BASE = 'http://127.0.0.1:8000'
 const fetchRealtime = async () => {
   try {
     const res = await axios.get(`${API_BASE}/api/realtime`)
+
+    // 【关键】打印一下看看拿到了什么
+    console.log("API Response:", res.data)
+
+    // 只有数据不为空时才更新
     if (res.data) {
       realtimeData.value = res.data
       updateChart(res.data.temperature)
+    } else {
+      console.warn("后端返回数据为空")
     }
   } catch (e) {
     console.error('获取实时数据失败', e)

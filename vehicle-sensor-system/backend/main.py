@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # 引入解密工具
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from crypto_utils import decrypt_data
+from crypto_utils import decrypt_data, encrypt_data
 
 # 导入数据库模块
 from database import SessionLocal, engine, Base
@@ -24,6 +24,7 @@ BROKER = 'broker.emqx.io'
 PORT = 1883
 TOPIC = "vehicle/ESP32_SIM_01/sensors/realtime"
 CLIENT_ID = "Backend_Server_01"
+
 # ===========================================
 
 # --- 配置日志 ---
@@ -88,57 +89,47 @@ def on_connect(client, userdata, flags, rc):
 
 
 def on_message(client, userdata, msg):
-    """
-    当收到 MQTT 消息时的回调函数
-    包含：解密 -> 解析 -> 测试引擎校验 -> 入库
-    """
     try:
-        # 1. 获取原始载荷 (现在是 Base64 编码的密文)
+        # 1. 获取密文并解密
         encrypted_payload = msg.payload.decode()
-
-        # 2. 【安全模块】解密数据
         decrypted_json = decrypt_data(encrypted_payload)
 
-        # 3. 容错处理：如果解密失败，记录错误并丢弃数据
         if decrypted_json is None:
-            logger.error("❌ [安全模块] 解密失败！数据可能被篡改或密钥不匹配。")
+            logger.error("❌ [安全模块] 传输层解密失败！")
             return
 
-        # 4. 解析 JSON 数据
         data = json.loads(decrypted_json)
 
-        # 5. 运行自动化测试引擎
-        # 注意：这里必须接收两个返回值
+        # 2. 测试引擎 (对明文进行测试)
         is_abnormal, error_msg = test_engine(data['data'])
 
-        # 6. 存入数据库
+        # 3. 【新增】数据库存储加密
+        # 将浮点数转为字符串后再加密
+        plain_temp = str(data['data']['temperature'])
+        plain_hum = str(data['data']['humidity'])
+
+        encrypted_temp = encrypt_data(plain_temp)
+        encrypted_hum = encrypt_data(plain_hum)
+
+        # 4. 存入数据库 (存的是密文)
         db = SessionLocal()
         try:
             db_data = SensorData(
                 device_id=data['device_id'],
-                temperature=data['data']['temperature'],
-                humidity=data['data']['humidity'],
-                is_abnormal=is_abnormal,  # 这里必须是 True/False，不能是字符串
+                temperature=encrypted_temp,  # 存密文
+                humidity=encrypted_hum,  # 存密文
+                is_abnormal=is_abnormal,
                 error_msg=error_msg
             )
             db.add(db_data)
             db.commit()
 
-            # 7. 打印日志
-            status = "🚨 异常" if is_abnormal else "✅ 正常"
-            temp = data['data']['temperature']
-            logger.info(f"📥 [解密成功] 温度: {temp}℃ | 判定: {status} {error_msg or ''}")
-
+            logger.info(f"📥 [存储成功] 数据已加密入库 | 判定: {'异常' if is_abnormal else '正常'}")
         finally:
             db.close()
 
-    except json.JSONDecodeError:
-        logger.error("❌ 数据解析失败：解密后的内容不是有效的 JSON 格式")
-    except KeyError as e:
-        logger.error(f"❌ 数据字段缺失: {e}")
     except Exception as e:
-        logger.error(f"❌ 处理消息时发生未知错误: {e}")
-
+        logger.error(f"❌ 处理消息出错: {e}")
 
 def mqtt_thread_task():
     client = mqtt_client.Client(CLIENT_ID)
@@ -165,28 +156,71 @@ def read_root():
     return {"message": "系统运行中，数据库已连接"}
 
 
-@app.get("/api/history")
-def get_history(limit: int = 20):
-    """
-    查询最近的历史数据
-    """
-    db = SessionLocal()
-    try:
-        # 按时间倒序，取最近的20条
-        data = db.query(SensorData).order_by(SensorData.create_time.desc()).limit(limit).all()
-        return data
-    finally:
-        db.close()
-
 @app.get("/api/realtime")
 def get_realtime():
     """
-    获取最新的一条数据，用于仪表盘展示
+    获取最新的一条数据 (需解密后返回)
     """
     db = SessionLocal()
     try:
-        # 查询数据库最新的一条
+        # 查询最新的一条
         data = db.query(SensorData).order_by(SensorData.create_time.desc()).first()
-        return data
+
+        if data is None:
+            return None
+
+        # 【新增】解密数据
+        # 如果数据库里是密文，解密后转回浮点数
+        # 如果解密失败（比如是旧数据），则尝试直接转换
+        try:
+            temp_val = float(decrypt_data(data.temperature))
+            hum_val = float(decrypt_data(data.humidity))
+        except:
+            temp_val = 0.0
+            hum_val = 0.0
+
+        # 返回明文给前端
+        return {
+            "id": data.id,
+            "device_id": data.device_id,
+            "temperature": temp_val,
+            "humidity": hum_val,
+            "is_abnormal": data.is_abnormal,
+            "error_msg": data.error_msg,
+            "create_time": data.create_time
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/history")
+def get_history(limit: int = 20):
+    """
+    查询最近的历史数据 (需解密后返回)
+    """
+    db = SessionLocal()
+    try:
+        data_list = db.query(SensorData).order_by(SensorData.create_time.desc()).limit(limit).all()
+
+        result = []
+        for item in data_list:
+            # 【新增】解密每一条数据
+            try:
+                temp_val = float(decrypt_data(item.temperature))
+                hum_val = float(decrypt_data(item.humidity))
+            except:
+                temp_val = 0.0
+                hum_val = 0.0
+
+            result.append({
+                "id": item.id,
+                "device_id": item.device_id,
+                "temperature": temp_val,
+                "humidity": hum_val,
+                "is_abnormal": item.is_abnormal,
+                "error_msg": item.error_msg,
+                "create_time": item.create_time
+            })
+        return result
     finally:
         db.close()

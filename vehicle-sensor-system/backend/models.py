@@ -12,8 +12,11 @@ class SensorData(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     device_id = Column(String, index=True)
-    temperature = Column(Float)
-    humidity = Column(Float)
+
+    # 【修改】类型改为 String，长度设大一点，足够容纳密文
+    temperature = Column(String(100))
+    humidity = Column(String(100))
+
     is_abnormal = Column(Boolean, default=False)  # 测试结果：是否异常
     error_msg = Column(String, nullable=True)     # 异常原因
     create_time = Column(DateTime, default=func.now()) # 入库时间
