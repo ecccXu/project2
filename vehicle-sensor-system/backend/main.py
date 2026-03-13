@@ -24,7 +24,9 @@ BROKER = 'broker.emqx.io'
 PORT = 1883
 TOPIC = "vehicle/ESP32_SIM_01/sensors/realtime"
 CLIENT_ID = "Backend_Server_01"
-
+# --- 全局状态：用于丢包检测 ---
+# 结构: { "设备ID": 上一次收到的时间戳 }
+device_last_timestamp = {}
 # ===========================================
 
 # --- 配置日志 ---
@@ -89,42 +91,73 @@ def on_connect(client, userdata, flags, rc):
 
 
 def on_message(client, userdata, msg):
+    """
+    当收到 MQTT 消息时的回调函数
+    包含：解密 -> 丢包检测 -> 测试引擎校验 -> 入库
+    """
+    global device_last_timestamp
+
     try:
-        # 1. 获取密文并解密
+        # 1. 获取原始载荷并解密
         encrypted_payload = msg.payload.decode()
         decrypted_json = decrypt_data(encrypted_payload)
 
         if decrypted_json is None:
-            logger.error("❌ [安全模块] 传输层解密失败！")
+            logger.error("❌ [安全模块] 解密失败！")
             return
 
         data = json.loads(decrypted_json)
 
-        # 2. 测试引擎 (对明文进行测试)
-        is_abnormal, error_msg = test_engine(data['data'])
+        # 2. 【新增】通信连续性检测 (丢包率检测)
+        current_device_id = data['device_id']
+        current_timestamp = data['timestamp']
 
-        # 3. 【新增】数据库存储加密
-        # 将浮点数转为字符串后再加密
-        plain_temp = str(data['data']['temperature'])
-        plain_hum = str(data['data']['humidity'])
+        continuity_errors = []
 
-        encrypted_temp = encrypt_data(plain_temp)
-        encrypted_hum = encrypt_data(plain_hum)
+        if current_device_id in device_last_timestamp:
+            last_ts = device_last_timestamp[current_device_id]
+            # 计算时间差 (秒)
+            diff = current_timestamp - last_ts
 
-        # 4. 存入数据库 (存的是密文)
+            # 阈值设定：正常间隔2秒，如果大于5秒则判定为异常(允许一定网络抖动)
+            if diff > 5:
+                continuity_errors.append(f"通信不连续: 间隔{diff}秒 (可能丢包)")
+
+        # 更新该设备的最后时间戳
+        device_last_timestamp[current_device_id] = current_timestamp
+
+        # 3. 运行自动化测试引擎 (数据内容校验)
+        is_abnormal_content, error_msg_content = test_engine(data['data'])
+
+        # 4. 合并所有的错误信息
+        all_errors = continuity_errors
+        if error_msg_content:
+            all_errors.append(error_msg_content)
+
+        final_is_abnormal = len(all_errors) > 0
+        final_error_msg = "; ".join(all_errors)
+
+        # 5. 存入数据库
         db = SessionLocal()
         try:
+            # 加密存储数值
+            encrypted_temp = encrypt_data(str(data['data']['temperature']))
+            encrypted_hum = encrypt_data(str(data['data']['humidity']))
+
             db_data = SensorData(
-                device_id=data['device_id'],
-                temperature=encrypted_temp,  # 存密文
-                humidity=encrypted_hum,  # 存密文
-                is_abnormal=is_abnormal,
-                error_msg=error_msg
+                device_id=current_device_id,
+                temperature=encrypted_temp,
+                humidity=encrypted_hum,
+                is_abnormal=final_is_abnormal,
+                error_msg=final_error_msg
             )
             db.add(db_data)
             db.commit()
 
-            logger.info(f"📥 [存储成功] 数据已加密入库 | 判定: {'异常' if is_abnormal else '正常'}")
+            # 日志打印
+            status = "🚨 异常" if final_is_abnormal else "✅ 正常"
+            logger.info(f"📥 [收到] 温度: {data['data']['temperature']}℃ | 判定: {status} {final_error_msg or ''}")
+
         finally:
             db.close()
 
