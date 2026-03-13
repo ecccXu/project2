@@ -7,6 +7,8 @@ import threading
 import logging
 import sys
 import os
+import time
+
 from fastapi import FastAPI
 from paho.mqtt import client as mqtt_client
 from sqlalchemy.orm import Session
@@ -143,6 +145,16 @@ def on_message(client, userdata, msg):
         final_is_abnormal = len(all_errors) > 0
         final_error_msg = "; ".join(all_errors)
 
+        # ================= 【新增】计算延迟 =================
+        # 获取模拟器发送时间 (毫秒)
+        send_time_ms = data.get('send_time', 0)
+        # 获取当前服务器时间 (毫秒)
+        recv_time_ms = time.time() * 1000
+
+        # 计算延迟 (毫秒)
+        latency_ms = int(recv_time_ms - send_time_ms)
+        # ================================================
+
         # ================= 4. 测试任务管理与入库 =================
         # 只有当测试任务开启时，才进行入库统计
         if test_session["is_active"]:
@@ -244,6 +256,7 @@ def get_realtime():
             "device_id": data.device_id,
             "temperature": temp_val,
             "humidity": hum_val,
+            "latency": data.latency,  # 【新增】返回给前端
             "is_abnormal": data.is_abnormal,
             "error_msg": data.error_msg,
             "create_time": data.create_time
@@ -276,6 +289,7 @@ def get_history(limit: int = 20):
                 "device_id": item.device_id,
                 "temperature": temp_val,
                 "humidity": hum_val,
+                "latency": item.latency,  # 【新增】返回给前端
                 "is_abnormal": item.is_abnormal,
                 "error_msg": item.error_msg,
                 "create_time": item.create_time

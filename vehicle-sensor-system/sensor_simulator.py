@@ -46,6 +46,7 @@ def generate_sensor_data():
     data = {
         "device_id": DEVICE_ID,
         "timestamp": int(time.time()),
+        "send_time": time.time() * 1000,  # 【新增】记录毫秒级发送时间戳
         "data": {
             "temperature": temp,
             "humidity": hum,

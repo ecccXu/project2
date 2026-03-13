@@ -53,9 +53,9 @@ const exportReport = () => {
     return
   }
 
-  // 1. 定义 CSV 内容
-  // \uFEFF 是关键，防止 Excel 打开中文乱码
-  let csvContent = "\uFEFF采集时间,设备ID,温度(℃),湿度(%),测试结果,异常原因\n"
+  // 1. 定义 CSV 表头
+  // 【修改】增加了 "传输延迟" 列
+  let csvContent = "\uFEFF采集时间,设备ID,温度(℃),湿度(%),传输延迟,测试结果,异常原因\n"
 
   // 2. 遍历数据填充
   tableData.value.forEach(row => {
@@ -63,22 +63,27 @@ const exportReport = () => {
     const result = row.is_abnormal ? "异常" : "正常"
     const errorMsg = row.error_msg || ""
 
-    // 使用反引号拼接字符串，注意逗号分隔
-    csvContent += `${time},${row.device_id},${row.temperature},${row.humidity},${result},${errorMsg}\n`
+    // 【新增】获取延迟数值，如果没有则显示 0
+    const latency = row.latency || 0
+
+    // 拼接每一行
+    // 【修改】增加 latency 字段
+    csvContent += `${time},${row.device_id},${row.temperature},${row.humidity},${latency},${result},${errorMsg}\n`
   })
 
-  // 3. 创建 Blob 对象 (二进制大对象)
+  // 3. 创建 Blob 对象
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
 
-  // 4. 创建临时下载链接
+  // 4. 创建下载链接
   const url = URL.createObjectURL(blob)
   const link = document.createElement("a")
   link.setAttribute("href", url)
-  link.setAttribute("download", `车载传感器测试报告_${new Date().toLocaleDateString()}.csv`)
+  link.setAttribute("download", `车载传感器测试报告_${new Date().toLocaleDateString()}_${new Date().toLocaleTimeString().replace(/:/g, '-')}.csv`)
 
   // 5. 触发下载
-  document.body.appendChild(link) // 必须添加到 DOM 中才兼容某些浏览器
+  document.body.appendChild(link)
   link.click()
+  document.body.removeChild(link)
 
   // 6. 清理环境
   document.body.removeChild(link) // 移除链接元素
@@ -352,6 +357,11 @@ onUnmounted(() => {
           <div id="gaugeChart" style="width: 100%; height: 400px;"></div>
           <div style="text-align: center; margin-top: 20px; font-size: 16px;">
             当前湿度: <b>{{ realtimeData.humidity }} %</b> <br>
+            <!-- 【新增】显示延迟 -->
+            <span :style="{ color: realtimeData.latency > 500 ? 'red' : 'green' }">
+              传输延迟: <b>{{ realtimeData.latency || 0 }} ms</b>
+            </span>
+            <br>
             更新时间: {{ new Date(realtimeData.create_time).toLocaleString() }}
           </div>
         </el-card>
