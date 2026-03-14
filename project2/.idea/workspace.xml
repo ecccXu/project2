@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="06a1c691-4a66-4a19-adda-b250ff963c88" name="更改" comment="- 新增功能：性能指标量化" />
+    <list default="true" id="06a1c691-4a66-4a19-adda-b250ff963c88" name="更改" comment="- Final Version1.0(no hardware)">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -182,7 +184,8 @@
       <workItem from="1773317492632" duration="57000" />
       <workItem from="1773317562350" duration="2979000" />
       <workItem from="1773400460113" duration="214000" />
-      <workItem from="1773401004592" duration="4650000" />
+      <workItem from="1773401004592" duration="4777000" />
+      <workItem from="1773405828760" duration="105000" />
     </task>
     <task id="LOCAL-00001" summary="- 新项目提交">
       <option name="closed" value="true" />
@@ -240,7 +243,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773405502541</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="- Final Version1.0(no hardware)">
+      <option name="closed" value="true" />
+      <created>1773405806226</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1773405806226</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -280,7 +291,8 @@
     <MESSAGE value="- 完善功能：丢包率" />
     <MESSAGE value="- 新增功能：测试计划的调度、执行与结果记录功能" />
     <MESSAGE value="- 新增功能：性能指标量化" />
-    <option name="LAST_COMMIT_MESSAGE" value="- 新增功能：性能指标量化" />
+    <MESSAGE value="- Final Version1.0(no hardware)" />
+    <option name="LAST_COMMIT_MESSAGE" value="- Final Version1.0(no hardware)" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/project2$sensor_simulator.coverage" NAME="sensor_simulator 覆盖结果" MODIFIED="1772277623417" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/../vehicle-sensor-system" />
