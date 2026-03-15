@@ -268,13 +268,42 @@ const refreshStatus = async () => {
   testStatus.value = res.data
 }
 
+// 配置表单数据
+const configForm = ref({
+  temp_min: -40,
+  temp_max: 85,
+  hum_min: 0,
+  hum_max: 100,
+  temp_change_limit: 5,
+  hum_change_limit: 10,
+  lost_timeout: 5
+})
+
+// 获取配置
+const fetchConfig = async () => {
+  const res = await axios.get(`${API_BASE}/api/config`)
+  if (res.data) {
+    configForm.value = res.data
+  }
+}
+
+// 保存配置
+const saveConfig = async () => {
+  try {
+    await axios.post(`${API_BASE}/api/config`, configForm.value)
+    alert('规则配置已生效！')
+  } catch (e) {
+    alert('配置保存失败')
+  }
+}
+
 // 在 onMounted 中加入状态轮询
 onMounted(() => {
   initChart()        // 初始化仪表盘
   initLineChart()    // 初始化折线图
   fetchHistory()     // 拉取历史数据
   fetchRealtime()    // 拉取实时数据
-
+  fetchConfig() // 加载配置
   // 定时轮询
   timer = setInterval(() => {
     fetchRealtime()
@@ -304,7 +333,7 @@ onUnmounted(() => {
         导出测试报告
       </el-button>
     </div>
-    <!-- 测试控制台 -->
+    <!-- 左侧：测试控制台 -->
     <el-row :gutter="20" style="margin-bottom: 20px;">
       <el-col :span="24">
         <el-card shadow="hover" style="background: #fff;">
@@ -340,6 +369,46 @@ onUnmounted(() => {
         </el-card>
       </el-col>
     </el-row>
+    <!-- 右侧：规则配置 -->
+    <el-col :span="12">
+      <el-card shadow="hover">
+        <template #header>
+          <span>测试规则配置</span>
+        </template>
+
+        <el-form :model="configForm" label-width="120px" size="small">
+          <el-row>
+            <el-col :span="12">
+              <el-form-item label="温度下限 (℃)">
+                <el-input v-model="configForm.temp_min" type="number"></el-input>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="温度上限 (℃)">
+                <el-input v-model="configForm.temp_max" type="number"></el-input>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row>
+            <el-col :span="12">
+              <el-form-item label="突变阈值 (℃)">
+                <el-input v-model="configForm.temp_change_limit" type="number"></el-input>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="丢包超时 (秒)">
+                <el-input v-model="configForm.lost_timeout" type="number"></el-input>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-form-item>
+            <el-button type="primary" @click="saveConfig">应用配置</el-button>
+          </el-form-item>
+        </el-form>
+      </el-card>
+    </el-col>
     <!-- 核心展示区 -->
     <el-row :gutter="20" style="margin-top: 20px;">
 

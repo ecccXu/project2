@@ -32,15 +32,23 @@ def generate_sensor_data():
     生成模拟传感器数据
     【注意】这里必须只返回 data 字典，不要返回元组
     """
-    # 模拟基础温度
+    # 基础数值模拟
     base_temp = 25 + 3 * math.sin(time.time() / 10)
     temp = round(base_temp + random.uniform(-0.5, 0.5), 2)
     hum = round(60 + random.uniform(-5, 5), 2)
 
-    # 模拟异常场景
-    if random.random() < 0.1:
+    # --- 模拟异常场景 ---
+    rand_val = random.random()
+    # 1. 模拟高温数据 (10%概率)
+    if rand_val < 0.1:
         temp = round(random.uniform(90, 110), 2)
         print("⚠️ [模拟] 生成异常高温数据！")
+
+    # 2. 模拟数据突变 (5%概率)
+    elif rand_val < 0.15:
+        # 温度瞬间跳高 20 度，模拟接触不良或干扰
+        temp = temp + 20.0
+        print("⚡ [模拟] 生成数据突变！")
 
     # 构造标准数据字典
     data = {

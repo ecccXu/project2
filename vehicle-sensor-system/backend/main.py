@@ -21,6 +21,7 @@ from crypto_utils import decrypt_data, encrypt_data
 # 导入数据库模块
 from database import SessionLocal, engine, Base
 from models import SensorData
+from pydantic import BaseModel
 
 # ================= 配置区域 =================
 BROKER = 'broker.emqx.io'
@@ -36,6 +37,18 @@ test_session = {
     "start_time": None,       # 测试开始时间
     "total_count": 0,         # 本次测试总条数
     "abnormal_count": 0,      # 本次异常条数
+}
+# 【新增】--- 全局状态：用于突变检测 ---
+device_last_values = {}
+# 【新增】--- 全局状态：动态测试规则配置 ---
+test_config = {
+    "temp_min": -40.0,       # 温度下限
+    "temp_max": 85.0,        # 温度上限
+    "hum_min": 0.0,          # 湿度下限
+    "hum_max": 100.0,        # 湿度上限
+    "temp_change_limit": 5.0, # 温度突变阈值 (℃)
+    "hum_change_limit": 10.0, # 湿度突变阈值 (%)
+    "lost_timeout": 5         # 丢包判定超时 (秒)
 }
 # ===========================================
 
@@ -64,29 +77,24 @@ app.add_middleware(
 )
 
 # --- 核心功能：自动化测试引擎 ---
-def test_engine(data: dict):
+def test_engine(data):
     """
-    对传感器数据进行多维度校验
-    返回: (是否异常, 错误信息)
+    基于动态配置的测试引擎
     """
     errors = []
-    temp = data.get('temperature', 0)
-    hum = data.get('humidity', 0)
+    temp = data.get('temperature')
+    hum = data.get('humidity')
 
-    # 1. 温度范围测试 (模拟车载工况：-40 到 85 度)
-    if temp < -40 or temp > 85:
+    # 1. 温度范围测试 (读取全局配置)
+    if temp < test_config["temp_min"] or temp > test_config["temp_max"]:
         errors.append(f"温度超限: {temp}℃")
 
-    # 2. 湿度范围测试 (0% - 100%)
-    if hum < 0 or hum > 100:
+    # 2. 湿度范围测试
+    if hum < test_config["hum_min"] or hum > test_config["hum_max"]:
         errors.append(f"湿度非法: {hum}%")
 
-    # 3. 简单的逻辑测试 (例如：温度>80且湿度<5%，可能意味着传感器故障)
-    if temp > 80 and hum < 5:
-        errors.append("疑似传感器故障：高温低湿")
-
     is_abnormal = len(errors) > 0
-    error_msg = "; ".join(errors) if errors else None
+    error_msg = "; ".join(errors)
 
     return is_abnormal, error_msg
 
@@ -102,9 +110,10 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     """
-    核心回调函数：解密 -> 连续性检测 -> 内容校验 -> 任务状态判断 -> 加密存储
+    核心回调函数：
+    解密 -> 连续性检测(丢包) -> 稳定性检测(突变) -> 内容校验(范围) -> 加密存储
     """
-    global device_last_timestamp, test_session
+    global device_last_timestamp, device_last_values, test_session
 
     try:
         # ================= 1. 安全模块：解密 =================
@@ -117,46 +126,63 @@ def on_message(client, userdata, msg):
 
         data = json.loads(decrypted_json)
 
-        # ================= 2. 通信连续性检测 (丢包率) =================
+        # 提取核心数据
         current_device_id = data['device_id']
         current_timestamp = data['timestamp']
+        current_temp = data['data']['temperature']
+        current_hum = data['data']['humidity']
 
+        # ================= 2. 通信连续性检测 (丢包) =================
         continuity_errors = []
-
         if current_device_id in device_last_timestamp:
             last_ts = device_last_timestamp[current_device_id]
             diff = current_timestamp - last_ts
 
-            # 阈值设定：正常2秒，超过5秒判定为丢包
-            if diff > 5:
+            # 阈值设定：使用配置变量
+            if diff > test_config["lost_timeout"]:
                 continuity_errors.append(f"通信不连续: 间隔{diff}秒")
 
         # 更新最后时间戳
         device_last_timestamp[current_device_id] = current_timestamp
 
-        # ================= 3. 自动化测试引擎 (内容校验) =================
+        # ================= 3. 数据稳定性检测 (突变) 【新增】 =================
+        stability_errors = []
+        # 阈值设定：温度突变超过5℃，湿度突变超过10%
+        TEMP_CHANGE_LIMIT = 5.0
+        HUM_CHANGE_LIMIT = 10.0
+
+        if current_device_id in device_last_values:
+            last_temp = device_last_values[current_device_id]['temperature']
+            last_hum = device_last_values[current_device_id]['humidity']
+
+            # 计算差值
+            temp_diff = abs(current_temp - last_temp)
+            hum_diff = abs(current_hum - last_hum)
+
+            # 使用配置变量
+            if temp_diff > test_config["temp_change_limit"]:
+                stability_errors.append(f"温度突变: {last_temp}℃ -> {current_temp}℃")
+            if hum_diff > test_config["hum_change_limit"]:
+                stability_errors.append(f"湿度突变: {last_hum}% -> {current_hum}%")
+
+        # 更新最后一次的数值记录
+        device_last_values[current_device_id] = {
+            'temperature': current_temp,
+            'humidity': current_hum
+        }
+
+        # ================= 4. 自动化测试引擎 (内容校验) =================
         is_abnormal_content, error_msg_content = test_engine(data['data'])
 
-        # 合并所有错误信息
-        all_errors = continuity_errors
+        # ================= 5. 合并所有的错误信息 =================
+        all_errors = continuity_errors + stability_errors
         if error_msg_content:
             all_errors.append(error_msg_content)
 
         final_is_abnormal = len(all_errors) > 0
         final_error_msg = "; ".join(all_errors)
 
-        # ================= 【新增】计算延迟 =================
-        # 获取模拟器发送时间 (毫秒)
-        send_time_ms = data.get('send_time', 0)
-        # 获取当前服务器时间 (毫秒)
-        recv_time_ms = time.time() * 1000
-
-        # 计算延迟 (毫秒)
-        latency_ms = int(recv_time_ms - send_time_ms)
-        # ================================================
-
-        # ================= 4. 测试任务管理与入库 =================
-        # 只有当测试任务开启时，才进行入库统计
+        # ================= 6. 测试任务管理与入库 =================
         if test_session["is_active"]:
             # 更新全局统计
             test_session["total_count"] += 1
@@ -167,16 +193,18 @@ def on_message(client, userdata, msg):
             db = SessionLocal()
             try:
                 # 【存储加密】将数值转为字符串后加密
-                plain_temp = str(data['data']['temperature'])
-                plain_hum = str(data['data']['humidity'])
+                encrypted_temp = encrypt_data(str(current_temp))
+                encrypted_hum = encrypt_data(str(current_hum))
 
-                encrypted_temp = encrypt_data(plain_temp)
-                encrypted_hum = encrypt_data(plain_hum)
+                # 计算延迟 (毫秒)
+                send_time = data.get('send_time', 0)
+                latency_ms = int(time.time() * 1000 - send_time) if send_time else 0
 
                 db_data = SensorData(
                     device_id=current_device_id,
                     temperature=encrypted_temp,
                     humidity=encrypted_hum,
+                    latency=latency_ms,
                     is_abnormal=final_is_abnormal,
                     error_msg=final_error_msg
                 )
@@ -185,7 +213,8 @@ def on_message(client, userdata, msg):
 
                 # 打印日志
                 status = "🚨 异常" if final_is_abnormal else "✅ 正常"
-                logger.info(f"📥 [测试中] 温度: {plain_temp}℃ | 判定: {status} {final_error_msg or ''}")
+                logger.info(
+                    f"📥 [测试中] 温度: {current_temp}℃ | 延迟: {latency_ms}ms | 判定: {status} {final_error_msg or ''}")
 
             except Exception as db_err:
                 logger.error(f"❌ 数据库写入错误: {db_err}")
@@ -193,7 +222,7 @@ def on_message(client, userdata, msg):
                 db.close()
         else:
             # 测试未开启，仅打印日志不入库
-            logger.info(f"⏸️ [待机] 忽略数据: {data['data']['temperature']}℃")
+            logger.info(f"⏸️ [待机] 忽略数据: {current_temp}℃")
 
     except json.JSONDecodeError:
         logger.error("❌ 数据解析失败：非JSON格式")
@@ -356,3 +385,36 @@ def get_test_status():
         "total_count": test_session["total_count"],
         "abnormal_count": test_session["abnormal_count"]
     }
+
+# 定义请求数据模型
+class ConfigModel(BaseModel):
+    temp_min: float
+    temp_max: float
+    hum_min: float
+    hum_max: float
+    temp_change_limit: float
+    hum_change_limit: float
+    lost_timeout: int
+
+
+@app.get("/api/config")
+def get_config():
+    """获取当前测试配置"""
+    return test_config
+
+
+@app.post("/api/config")
+def update_config(config: ConfigModel):
+    """更新测试配置"""
+    global test_config
+    # 更新字典值
+    test_config["temp_min"] = config.temp_min
+    test_config["temp_max"] = config.temp_max
+    test_config["hum_min"] = config.hum_min
+    test_config["hum_max"] = config.hum_max
+    test_config["temp_change_limit"] = config.temp_change_limit
+    test_config["hum_change_limit"] = config.hum_change_limit
+    test_config["lost_timeout"] = config.lost_timeout
+
+    logger.info(f"⚙️ 测试规则已更新: 温度范围[{config.temp_min}, {config.temp_max}]")
+    return {"message": "配置更新成功", "data": test_config}
