@@ -4,11 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="06a1c691-4a66-4a19-adda-b250ff963c88" name="更改" comment="docs(guidelines): 更新开发指南中的IDE工具和章节标题&#10;&#10;- 将代码编辑器从VS Code更改为Pycharm&#10;- 修正所有相关章节中的终端操作说明&#10;- 更新章节标题为4.1增加历史趋势图和4.2测试报告导出&#10;- 调整进阶测试部分的格式和样式&#10;- 重新组织启动流程说明&#10;- 更新规划建议部分的格式和内容&#10;- 精简完善建议部分的描述&#10;- 为各个功能模块添加阶段实施文档标题&#10;- 调整待办事项为复选框格式以便跟踪进度">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../vehicle-sensor-system/backend/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/../vehicle-sensor-system/backend/main.py" afterDir="false" />
+    <list default="true" id="06a1c691-4a66-4a19-adda-b250ff963c88" name="更改" comment="feat(test): 添加车辆传感器系统测试规则配置功能&#10;&#10;- 实现前端配置表单，支持温度、湿度范围及突变阈值设置&#10;- 添加后端API接口，支持测试规则的动态配置与持久化&#10;- 集成突变检测算法，监控传感器数据的稳定性变化&#10;- 增强测试引擎，支持丢包超时和数据连续性检测&#10;- 更新传感器模拟器，增加异常数据和突变场景模拟&#10;- 添加配置生效提示和错误处理机制&#10;- 优化日志输出，增加延迟统计和状态跟踪功能">
       <change beforePath="$PROJECT_DIR$/../vehicle-sensor-system/backend/test_system.db" beforeDir="false" afterPath="$PROJECT_DIR$/../vehicle-sensor-system/backend/test_system.db" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../vehicle-sensor-system/sensor_simulator.py" beforeDir="false" afterPath="$PROJECT_DIR$/../vehicle-sensor-system/sensor_simulator.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -195,7 +192,7 @@
       <workItem from="1773569242830" duration="60000" />
       <workItem from="1773659451217" duration="646000" />
       <workItem from="1774350283738" duration="1593000" />
-      <workItem from="1774354090187" duration="1538000" />
+      <workItem from="1774354090187" duration="1978000" />
     </task>
     <task id="LOCAL-00001" summary="- 新项目提交">
       <option name="closed" value="true" />
@@ -277,7 +274,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773569294233</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="feat(test): 添加车辆传感器系统测试规则配置功能&#10;&#10;- 实现前端配置表单，支持温度、湿度范围及突变阈值设置&#10;- 添加后端API接口，支持测试规则的动态配置与持久化&#10;- 集成突变检测算法，监控传感器数据的稳定性变化&#10;- 增强测试引擎，支持丢包超时和数据连续性检测&#10;- 更新传感器模拟器，增加异常数据和突变场景模拟&#10;- 添加配置生效提示和错误处理机制&#10;- 优化日志输出，增加延迟统计和状态跟踪功能">
+      <option name="closed" value="true" />
+      <created>1774356074477</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1774356074477</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -320,7 +325,8 @@
     <MESSAGE value="- Final Version1.0(no hardware)" />
     <MESSAGE value="- 开发指南更新" />
     <MESSAGE value="docs(guidelines): 更新开发指南中的IDE工具和章节标题&#10;&#10;- 将代码编辑器从VS Code更改为Pycharm&#10;- 修正所有相关章节中的终端操作说明&#10;- 更新章节标题为4.1增加历史趋势图和4.2测试报告导出&#10;- 调整进阶测试部分的格式和样式&#10;- 重新组织启动流程说明&#10;- 更新规划建议部分的格式和内容&#10;- 精简完善建议部分的描述&#10;- 为各个功能模块添加阶段实施文档标题&#10;- 调整待办事项为复选框格式以便跟踪进度" />
-    <option name="LAST_COMMIT_MESSAGE" value="docs(guidelines): 更新开发指南中的IDE工具和章节标题&#10;&#10;- 将代码编辑器从VS Code更改为Pycharm&#10;- 修正所有相关章节中的终端操作说明&#10;- 更新章节标题为4.1增加历史趋势图和4.2测试报告导出&#10;- 调整进阶测试部分的格式和样式&#10;- 重新组织启动流程说明&#10;- 更新规划建议部分的格式和内容&#10;- 精简完善建议部分的描述&#10;- 为各个功能模块添加阶段实施文档标题&#10;- 调整待办事项为复选框格式以便跟踪进度" />
+    <MESSAGE value="feat(test): 添加车辆传感器系统测试规则配置功能&#10;&#10;- 实现前端配置表单，支持温度、湿度范围及突变阈值设置&#10;- 添加后端API接口，支持测试规则的动态配置与持久化&#10;- 集成突变检测算法，监控传感器数据的稳定性变化&#10;- 增强测试引擎，支持丢包超时和数据连续性检测&#10;- 更新传感器模拟器，增加异常数据和突变场景模拟&#10;- 添加配置生效提示和错误处理机制&#10;- 优化日志输出，增加延迟统计和状态跟踪功能" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat(test): 添加车辆传感器系统测试规则配置功能&#10;&#10;- 实现前端配置表单，支持温度、湿度范围及突变阈值设置&#10;- 添加后端API接口，支持测试规则的动态配置与持久化&#10;- 集成突变检测算法，监控传感器数据的稳定性变化&#10;- 增强测试引擎，支持丢包超时和数据连续性检测&#10;- 更新传感器模拟器，增加异常数据和突变场景模拟&#10;- 添加配置生效提示和错误处理机制&#10;- 优化日志输出，增加延迟统计和状态跟踪功能" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/project2$sensor_simulator.coverage" NAME="sensor_simulator 覆盖结果" MODIFIED="1772277623417" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/../vehicle-sensor-system" />
