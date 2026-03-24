@@ -114,7 +114,7 @@ def on_message(client, userdata, msg):
     核心回调函数：
     解密 -> 连续性检测(丢包) -> 稳定性检测(突变) -> 内容校验(范围) -> 加密存储
     """
-    global device_last_timestamp, device_last_values, test_session
+    global device_last_timestamp, device_last_values, test_session, test_config
 
     try:
         # ================= 1. 安全模块：解密 =================
@@ -139,18 +139,18 @@ def on_message(client, userdata, msg):
             last_ts = device_last_timestamp[current_device_id]
             diff = current_timestamp - last_ts
 
-            # 阈值设定：使用配置变量
+            # 使用动态配置的阈值
             if diff > test_config["lost_timeout"]:
                 continuity_errors.append(f"通信不连续: 间隔{diff}秒")
 
         # 更新最后时间戳
         device_last_timestamp[current_device_id] = current_timestamp
 
-        # ================= 3. 数据稳定性检测 (突变) 【新增】 =================
+        # ================= 3. 数据稳定性检测 (突变) =================
         stability_errors = []
-        # 阈值设定：温度突变超过5℃，湿度突变超过10%
-        TEMP_CHANGE_LIMIT = 5.0
-        HUM_CHANGE_LIMIT = 10.0
+        # 使用动态配置的阈值
+        temp_change_limit = test_config["temp_change_limit"]
+        hum_change_limit = test_config["hum_change_limit"]
 
         if current_device_id in device_last_values:
             last_temp = device_last_values[current_device_id]['temperature']
@@ -160,10 +160,9 @@ def on_message(client, userdata, msg):
             temp_diff = abs(current_temp - last_temp)
             hum_diff = abs(current_hum - last_hum)
 
-            # 使用配置变量
-            if temp_diff > test_config["temp_change_limit"]:
+            if temp_diff > temp_change_limit:
                 stability_errors.append(f"温度突变: {last_temp}℃ -> {current_temp}℃")
-            if hum_diff > test_config["hum_change_limit"]:
+            if hum_diff > hum_change_limit:
                 stability_errors.append(f"湿度突变: {last_hum}% -> {current_hum}%")
 
         # 更新最后一次的数值记录
@@ -173,6 +172,7 @@ def on_message(client, userdata, msg):
         }
 
         # ================= 4. 自动化测试引擎 (内容校验) =================
+        # 调用修改后的 test_engine，它会自动读取 test_config
         is_abnormal_content, error_msg_content = test_engine(data['data'])
 
         # ================= 5. 合并所有的错误信息 =================
@@ -183,14 +183,22 @@ def on_message(client, userdata, msg):
         final_is_abnormal = len(all_errors) > 0
         final_error_msg = "; ".join(all_errors)
 
-        # ================= 6. 测试任务管理与入库 =================
+        # ================= 6. 计算延迟 =================
+        # 提取发送时间，如果不存在则默认为当前时间(延迟为0)
+        send_time = data.get('send_time', 0)
+        current_time_ms = time.time() * 1000
+        latency_ms = int(current_time_ms - send_time) if send_time else 0
+
+        # ================= 7. 测试任务管理与入库 =================
         if test_session["is_active"]:
             # 更新全局统计
             test_session["total_count"] += 1
             if final_is_abnormal:
                 test_session["abnormal_count"] += 1
-            # 累加延迟用于计算平均值
+
+            # 【修复】累加延迟用于计算平均值
             test_session["total_latency"] += latency_ms
+
             # 数据库操作
             db = SessionLocal()
             try:
@@ -198,15 +206,11 @@ def on_message(client, userdata, msg):
                 encrypted_temp = encrypt_data(str(current_temp))
                 encrypted_hum = encrypt_data(str(current_hum))
 
-                # 计算延迟 (毫秒)
-                send_time = data.get('send_time', 0)
-                latency_ms = int(time.time() * 1000 - send_time) if send_time else 0
-
                 db_data = SensorData(
                     device_id=current_device_id,
                     temperature=encrypted_temp,
                     humidity=encrypted_hum,
-                    latency=latency_ms,
+                    latency=latency_ms,  # 使用定义好的变量
                     is_abnormal=final_is_abnormal,
                     error_msg=final_error_msg
                 )
