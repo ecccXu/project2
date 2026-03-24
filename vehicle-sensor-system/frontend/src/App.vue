@@ -254,12 +254,28 @@ const startTest = async () => {
   refreshStatus()
 }
 
+// 报告相关数据
+const reportDialogVisible = ref(false)
+const currentReport = ref({})
+
 // 结束测试
 const stopTest = async () => {
-  const res = await axios.post(`${API_BASE}/api/test/stop`)
-  alert(`测试结束！\n总数据: ${res.data.total_count}条\n通过率: ${res.data.pass_rate}%`)
-  refreshStatus()
-  fetchHistory() // 刷新表格
+  try {
+    const res = await axios.post(`${API_BASE}/api/test/stop`)
+    if (res.data) {
+      currentReport.value = res.data // 保存报告数据
+      reportDialogVisible.value = true // 打开弹窗
+      refreshStatus()
+      fetchHistory()
+    }
+  } catch (e) {
+    alert('结束测试失败')
+  }
+}
+
+// 打印报告功能
+const printReport = () => {
+  window.print()
 }
 
 // 获取状态
@@ -409,6 +425,66 @@ onUnmounted(() => {
         </el-form>
       </el-card>
     </el-col>
+    <!-- 【新增】测试报告弹窗 -->
+    <el-dialog
+      v-model="reportDialogVisible"
+      title="车载传感器测试报告"
+      width="50%"
+      center>
+
+      <div class="report-container" id="printArea">
+        <el-descriptions title="测试概览" :column="2" border>
+          <el-descriptions-item label="测试开始时间">
+            {{ new Date(currentReport.start_time).toLocaleString() }}
+          </el-descriptions-item>
+          <el-descriptions-item label="测试结束时间">
+            {{ new Date(currentReport.end_time).toLocaleString() }}
+          </el-descriptions-item>
+          <el-descriptions-item label="测试时长">
+            {{ currentReport.duration }}
+          </el-descriptions-item>
+          <el-descriptions-item label="测试数据总量">
+            {{ currentReport.total_count }} 条
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <el-divider />
+
+        <el-descriptions title="测试结果" :column="3" border>
+          <el-descriptions-item label="异常数据量">
+            <el-tag type="danger" size="large">{{ currentReport.abnormal_count }} 条</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="数据通过率">
+            <el-tag :type="currentReport.pass_rate >= 95 ? 'success' : 'warning'" size="large">
+              {{ currentReport.pass_rate }} %
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="平均传输延迟">
+            <el-tag type="info" size="large">{{ currentReport.avg_latency }} ms</el-tag>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <el-divider />
+
+        <div style="text-align: center; margin-top: 20px;">
+          <h3>综合测试结论：</h3>
+          <el-tag
+            :type="currentReport.conclusion === '通过' ? 'success' : 'danger'"
+            size="large"
+            style="font-size: 20px; padding: 10px 20px;">
+            {{ currentReport.conclusion }}
+          </el-tag>
+        </div>
+      </div>
+
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="reportDialogVisible = false">关闭</el-button>
+          <el-button type="primary" @click="printReport">打印报告</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
     <!-- 核心展示区 -->
     <el-row :gutter="20" style="margin-top: 20px;">
 
@@ -478,5 +554,19 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+@media print {
+  /* 打印时隐藏弹窗的按钮和页面背景 */
+  body * {
+    visibility: hidden;
+  }
+  #printArea, #printArea * {
+    visibility: visible;
+  }
+  #printArea {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
 }
 </style>

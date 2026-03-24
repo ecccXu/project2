@@ -37,6 +37,7 @@ test_session = {
     "start_time": None,       # 测试开始时间
     "total_count": 0,         # 本次测试总条数
     "abnormal_count": 0,      # 本次异常条数
+    "total_latency": 0,       # 本次测试总延迟 (秒)
 }
 # 【新增】--- 全局状态：用于突变检测 ---
 device_last_values = {}
@@ -188,7 +189,8 @@ def on_message(client, userdata, msg):
             test_session["total_count"] += 1
             if final_is_abnormal:
                 test_session["abnormal_count"] += 1
-
+            # 累加延迟用于计算平均值
+            test_session["total_latency"] += latency_ms
             # 数据库操作
             db = SessionLocal()
             try:
@@ -350,28 +352,49 @@ def start_test():
 @app.post("/api/test/stop")
 def stop_test():
     """
-    结束测试任务并生成报告
+    结束测试任务并生成详细报告
     """
+    global test_session
     if not test_session["is_active"]:
         return {"message": "没有正在进行的测试", "status": "error"}
 
     test_session["is_active"] = False
     end_time = datetime.datetime.now()
 
-    # 计算通过率
     total = test_session["total_count"]
     abnormal = test_session["abnormal_count"]
+    total_latency = test_session["total_latency"]
+
+    # 1. 计算通过率
     pass_rate = ((total - abnormal) / total * 100) if total > 0 else 0
+
+    # 2. 计算平均延迟
+    avg_latency = (total_latency / total) if total > 0 else 0
+
+    # 3. 生成综合结论 (示例逻辑)
+    conclusion = "通过"
+    if pass_rate < 95:
+        conclusion = "不通过"
+    elif avg_latency > 500:
+        conclusion = "不通过"
 
     report = {
         "start_time": test_session["start_time"],
         "end_time": end_time,
+        "duration": str(end_time - test_session["start_time"]),
         "total_count": total,
         "abnormal_count": abnormal,
-        "pass_rate": round(pass_rate, 2)
+        "pass_rate": round(pass_rate, 2),
+        "avg_latency": round(avg_latency, 2),
+        "conclusion": conclusion
     }
 
-    logger.info(f"🛑 测试任务结束！通过率: {pass_rate}%")
+    # 重置计数器 (保留配置)
+    test_session["total_count"] = 0
+    test_session["abnormal_count"] = 0
+    test_session["total_latency"] = 0
+
+    logger.info(f"🛑 测试任务结束！结论: {conclusion}")
     return report
 
 
