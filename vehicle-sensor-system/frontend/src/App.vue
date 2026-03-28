@@ -39,7 +39,7 @@ const fetchHistory = async () => {
     const res = await axios.get(`${API_BASE}/api/history?limit=20`)
     tableData.value = res.data
 
-    // 【新增】更新折线图
+    // 更新折线图
     updateLineChart(res.data)
   } catch (e) {
     console.error('获取历史数据失败', e)
@@ -63,7 +63,7 @@ const exportReport = () => {
     const result = row.is_abnormal ? "异常" : "正常"
     const errorMsg = row.error_msg || ""
 
-    // 【新增】获取延迟数值，如果没有则显示 0
+    // 获取延迟数值，如果没有则显示 0
     const latency = row.latency || 0
 
     // 拼接每一行
@@ -191,7 +191,7 @@ const updateChart = (value) => {
     })
   }
 }
-// 【新增】2. 折线图初始化
+// 2. 折线图初始化
 const initLineChart = () => {
   const chartDom = document.getElementById('lineChart')
   lineChartInstance = echarts.init(chartDom)
@@ -222,7 +222,7 @@ const initLineChart = () => {
   lineChartInstance.setOption(option)
 }
 
-// 【新增】3. 折线图数据更新
+// 3. 折线图数据更新
 const updateLineChart = (data) => {
   if (!lineChartInstance) return
 
@@ -343,7 +343,7 @@ onUnmounted(() => {
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
       <h1 style="margin: 0; color: #333;">车载传感器测试系统</h1>
 
-      <!-- 【新增】导出按钮 -->
+      <!-- 导出按钮 -->
       <!-- 添加 native-type="button" 和 @click.prevent -->
       <el-button type="primary" native-type="button" @click.prevent="exportReport">
         导出测试报告
@@ -425,7 +425,7 @@ onUnmounted(() => {
         </el-form>
       </el-card>
     </el-col>
-    <!-- 【新增】测试报告弹窗 -->
+    <!-- 测试报告弹窗 -->
     <el-dialog
       v-model="reportDialogVisible"
       title="车载传感器测试报告"
@@ -502,7 +502,7 @@ onUnmounted(() => {
           <div id="gaugeChart" style="width: 100%; height: 400px;"></div>
           <div style="text-align: center; margin-top: 20px; font-size: 16px;">
             当前湿度: <b>{{ realtimeData.humidity }} %</b> <br>
-            <!-- 【新增】显示延迟 -->
+            <!-- 显示延迟 -->
             <span :style="{ color: realtimeData.latency > 500 ? 'red' : 'green' }">
               传输延迟: <b>{{ realtimeData.latency || 0 }} ms</b>
             </span>
