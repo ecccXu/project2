@@ -64,7 +64,7 @@ logger = logging.getLogger("VehicleSystem")
 # --- 初始化数据库 ---
 # 启动时自动创建表文件
 Base.metadata.create_all(bind=engine)
-logger.info("✅ 数据库表结构检查完成")
+logger.info("[INFO] 数据库表结构检查完成")
 
 app = FastAPI()
 # --- 配置跨域 ---
@@ -103,10 +103,10 @@ def test_engine(data):
 # --- MQTT 消息处理 ---
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        logger.info("✅ [后端] 成功连接到 MQTT Broker")
+        logger.info("[INFO] <Backend> 成功连接到 MQTT Broker")
         client.subscribe(TOPIC)
     else:
-        logger.error(f"❌ [后端] 连接失败，代码: {rc}")
+        logger.error(f"[ERROR] <Backend> 连接失败，代码: {rc}")
 
 
 def on_message(client, userdata, msg):
@@ -122,7 +122,7 @@ def on_message(client, userdata, msg):
         decrypted_json = decrypt_data(encrypted_payload)
 
         if decrypted_json is None:
-            logger.error("❌ [安全模块] 解密失败！数据可能被篡改。")
+            logger.error("[ERROR] <Security> 解密失败！数据可能被篡改。")
             return
 
         data = json.loads(decrypted_json)
@@ -218,24 +218,24 @@ def on_message(client, userdata, msg):
                 db.commit()
 
                 # 打印日志
-                status = "🚨 异常" if final_is_abnormal else "✅ 正常"
+                status = "x 异常" if final_is_abnormal else "v 正常"
                 logger.info(
-                    f"📥 [测试中] 温度: {current_temp}℃ | 延迟: {latency_ms}ms | 判定: {status} {final_error_msg or ''}")
+                    f"[INFO] <测试中> 温度: {current_temp}℃ | 延迟: {latency_ms}ms | 判定: {status} {final_error_msg or ''}")
 
             except Exception as db_err:
-                logger.error(f"❌ 数据库写入错误: {db_err}")
+                logger.error(f"[ERROR] 数据库写入错误: {db_err}")
             finally:
                 db.close()
         else:
             # 测试未开启，仅打印日志不入库
-            logger.info(f"⏸️ [待机] 忽略数据: {current_temp}℃")
+            logger.info(f"[INFO] <待机> 忽略数据: {current_temp}℃")
 
     except json.JSONDecodeError:
-        logger.error("❌ 数据解析失败：非JSON格式")
+        logger.error("[ERROR] 数据解析失败：非JSON格式")
     except KeyError as e:
-        logger.error(f"❌ 数据字段缺失: {e}")
+        logger.error(f"[ERROR] 数据字段缺失: {e}")
     except Exception as e:
-        logger.error(f"❌ 处理消息时发生未知错误: {e}")
+        logger.error(f"[ERROR] 处理消息时发生未知错误: {e}")
 
 def mqtt_thread_task():
     client = mqtt_client.Client(CLIENT_ID)
@@ -245,13 +245,13 @@ def mqtt_thread_task():
         client.connect(BROKER, PORT, 60)
         client.loop_forever()
     except Exception as e:
-        logger.error(f"MQTT 线程异常: {e}")
+        logger.error(f"[ERROR] MQTT 线程异常: {e}")
 
 
 # --- FastAPI 生命周期 ---
 @app.on_event("startup")
 def startup_event():
-    logger.info("🚀 后端服务启动，正在启动 MQTT 监听线程...")
+    logger.info("[INFO] 后端服务启动，正在启动 MQTT 监听线程...")
     thread = threading.Thread(target=mqtt_thread_task, daemon=True)
     thread.start()
 
@@ -291,7 +291,7 @@ def get_realtime():
             "device_id": data.device_id,
             "temperature": temp_val,
             "humidity": hum_val,
-            "latency": data.latency,  # 【新增】返回给前端
+            "latency": data.latency,
             "is_abnormal": data.is_abnormal,
             "error_msg": data.error_msg,
             "create_time": data.create_time
@@ -311,7 +311,9 @@ def get_history(limit: int = 20):
 
         result = []
         for item in data_list:
-            # 【新增】解密每一条数据
+            # 解密数据
+            # 如果数据库里是密文，解密后转回浮点数
+            # 如果解密失败（比如是旧数据），则尝试直接转换
             try:
                 temp_val = float(decrypt_data(item.temperature))
                 hum_val = float(decrypt_data(item.humidity))
@@ -324,7 +326,7 @@ def get_history(limit: int = 20):
                 "device_id": item.device_id,
                 "temperature": temp_val,
                 "humidity": hum_val,
-                "latency": item.latency,  # 【新增】返回给前端
+                "latency": item.latency,
                 "is_abnormal": item.is_abnormal,
                 "error_msg": item.error_msg,
                 "create_time": item.create_time
@@ -349,7 +351,7 @@ def start_test():
     test_session["total_count"] = 0
     test_session["abnormal_count"] = 0
 
-    logger.info("🚀 测试任务已开始！")
+    logger.info("[INFO] 测试任务已开始！")
     return {"message": "测试开始", "start_time": test_session["start_time"]}
 
 
@@ -375,7 +377,7 @@ def stop_test():
     # 2. 计算平均延迟
     avg_latency = (total_latency / total) if total > 0 else 0
 
-    # 3. 生成综合结论 (示例逻辑)
+    # 3. 生成综合结论 (示例)
     conclusion = "通过"
     if pass_rate < 95:
         conclusion = "不通过"
@@ -398,7 +400,7 @@ def stop_test():
     test_session["abnormal_count"] = 0
     test_session["total_latency"] = 0
 
-    logger.info(f"🛑 测试任务结束！结论: {conclusion}")
+    logger.info(f"[INFO] 测试任务结束！结论: {conclusion}")
     return report
 
 
@@ -443,5 +445,5 @@ def update_config(config: ConfigModel):
     test_config["hum_change_limit"] = config.hum_change_limit
     test_config["lost_timeout"] = config.lost_timeout
 
-    logger.info(f"⚙️ 测试规则已更新: 温度范围[{config.temp_min}, {config.temp_max}]")
+    logger.info(f"[INFO] 测试规则已更新: 温度范围[{config.temp_min}, {config.temp_max}]")
     return {"message": "配置更新成功", "data": test_config}
