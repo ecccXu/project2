@@ -341,7 +341,7 @@ onUnmounted(() => {
   <div style="padding: 20px; background: #f5f5f5; min-height: 100vh;">
     <!-- 修改这一块：使用 flex 布局让标题和按钮分居两侧 -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-      <h1 style="margin: 0; color: #333;">车载传感器远程测试系统</h1>
+      <h1 style="margin: 0; color: #333;">车载传感器测试系统</h1>
 
       <!-- 【新增】导出按钮 -->
       <!-- 添加 native-type="button" 和 @click.prevent -->

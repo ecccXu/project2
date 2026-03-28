@@ -4,8 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="06a1c691-4a66-4a19-adda-b250ff963c88" name="更改" comment="feat(test): 添加车辆传感器系统测试规则配置功能&#10;&#10;- 实现前端配置表单，支持温度、湿度范围及突变阈值设置&#10;- 添加后端API接口，支持测试规则的动态配置与持久化&#10;- 集成突变检测算法，监控传感器数据的稳定性变化&#10;- 增强测试引擎，支持丢包超时和数据连续性检测&#10;- 更新传感器模拟器，增加异常数据和突变场景模拟&#10;- 添加配置生效提示和错误处理机制&#10;- 优化日志输出，增加延迟统计和状态跟踪功能">
+    <list default="true" id="06a1c691-4a66-4a19-adda-b250ff963c88" name="更改" comment="feat(report): 实现摘要式测试报告功能&#10;&#10;- 添加后端测试数据统计功能，包括总延迟累计和平均延迟计算&#10;- 优化停止测试接口，返回包含通过率、平均延迟等指标的详细报告&#10;- 实现前端报告弹窗界面，使用el-dialog组件展示测试概览和结果&#10;- 集成el-descriptions组件显示测试统计数据和综合结论&#10;- 添加打印报告功能支持PDF导出&#10;- 增加打印样式适配确保报告打印效果">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../vehicle-sensor-system/backend/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/../vehicle-sensor-system/backend/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../vehicle-sensor-system/backend/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/../vehicle-sensor-system/backend/models.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../vehicle-sensor-system/backend/test_system.db" beforeDir="false" afterPath="$PROJECT_DIR$/../vehicle-sensor-system/backend/test_system.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../vehicle-sensor-system/frontend/src/App.vue" beforeDir="false" afterPath="$PROJECT_DIR$/../vehicle-sensor-system/frontend/src/App.vue" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -61,26 +65,26 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;Python 测试.Python 测试 (main.py 内).executor&quot;: &quot;Run&quot;,
-    &quot;Python.crypto_utils.executor&quot;: &quot;Run&quot;,
-    &quot;Python.sensor_simulator.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;last_opened_file_path&quot;: &quot;X:/Code Projects/CarTest_MQTT/vehicle-sensor-system&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
-    &quot;ts.external.directory.path&quot;: &quot;X:\\Installed\\PyCharm 2024.3.4\\plugins\\javascript-plugin\\jsLanguageServicesImpl\\external&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "Python 测试.Python 测试 (main.py 内).executor": "Run",
+    "Python.crypto_utils.executor": "Run",
+    "Python.sensor_simulator.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "X:/Code Projects/MLProject",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "通义灵码",
+    "ts.external.directory.path": "X:\\Installed\\PyCharm 2024.3.4\\plugins\\javascript-plugin\\jsLanguageServicesImpl\\external",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="X:\Code Projects\CarTest_MQTT\vehicle-sensor-system" />
@@ -192,7 +196,11 @@
       <workItem from="1773569242830" duration="60000" />
       <workItem from="1773659451217" duration="646000" />
       <workItem from="1774350283738" duration="1593000" />
-      <workItem from="1774354090187" duration="1978000" />
+      <workItem from="1774354090187" duration="3583000" />
+      <workItem from="1774357710057" duration="55000" />
+      <workItem from="1774437225499" duration="590000" />
+      <workItem from="1774527354713" duration="544000" />
+      <workItem from="1774677807601" duration="2227000" />
     </task>
     <task id="LOCAL-00001" summary="- 新项目提交">
       <option name="closed" value="true" />
@@ -282,7 +290,39 @@
       <option name="project" value="LOCAL" />
       <updated>1774356074477</updated>
     </task>
-    <option name="localTasksCounter" value="12" />
+    <task id="LOCAL-00012" summary="chore(database): 更新测试数据库文件&#10;&#10;- 修改了传感器数据表的索引结构&#10;- 调整了设备ID索引的数据存储格式&#10;- 优化了数据库内部数据组织方式&#10;- 更新了传感器数据的时间戳记录机制&#10;- 改进了温度异常检测数据的存储效率">
+      <option name="closed" value="true" />
+      <created>1774356109787</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1774356109787</updated>
+    </task>
+    <task id="LOCAL-00013" summary="feat(test): 添加车载传感器测试报告功能&#10;&#10;- 在前端App.vue中添加报告弹窗相关数据和打印功能&#10;- 实现停止测试后显示详细测试报告的对话框界面&#10;- 添加测试概览、测试结果和综合结论的展示组件&#10;- 在后端main.py中扩展测试报告数据结构和计算逻辑&#10;- 实现平均传输延迟计算和综合测试结论生成&#10;- 添加打印样式适配和报告数据持久化处理">
+      <option name="closed" value="true" />
+      <created>1774357194026</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1774357194026</updated>
+    </task>
+    <task id="LOCAL-00014" summary="feat(sensor): 添加动态配置支持和延迟计算功能&#10;&#10;- 添加 test_config 全局变量支持动态阈值配置&#10;- 将固定阈值替换为从配置中读取的动态阈值&#10;- 实现发送时间提取和延迟毫秒计算功能&#10;- 修复延迟累加逻辑用于平均值计算&#10;- 移动延迟计算到数据入库之前确保准确性&#10;- 更新数据库模型以支持延迟字段存储">
+      <option name="closed" value="true" />
+      <created>1774357250508</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1774357250508</updated>
+    </task>
+    <task id="LOCAL-00015" summary="feat(report): 实现摘要式测试报告功能&#10;&#10;- 添加后端测试数据统计功能，包括总延迟累计和平均延迟计算&#10;- 优化停止测试接口，返回包含通过率、平均延迟等指标的详细报告&#10;- 实现前端报告弹窗界面，使用el-dialog组件展示测试概览和结果&#10;- 集成el-descriptions组件显示测试统计数据和综合结论&#10;- 添加打印报告功能支持PDF导出&#10;- 增加打印样式适配确保报告打印效果">
+      <option name="closed" value="true" />
+      <created>1774357756438</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1774357756438</updated>
+    </task>
+    <option name="localTasksCounter" value="16" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -326,7 +366,11 @@
     <MESSAGE value="- 开发指南更新" />
     <MESSAGE value="docs(guidelines): 更新开发指南中的IDE工具和章节标题&#10;&#10;- 将代码编辑器从VS Code更改为Pycharm&#10;- 修正所有相关章节中的终端操作说明&#10;- 更新章节标题为4.1增加历史趋势图和4.2测试报告导出&#10;- 调整进阶测试部分的格式和样式&#10;- 重新组织启动流程说明&#10;- 更新规划建议部分的格式和内容&#10;- 精简完善建议部分的描述&#10;- 为各个功能模块添加阶段实施文档标题&#10;- 调整待办事项为复选框格式以便跟踪进度" />
     <MESSAGE value="feat(test): 添加车辆传感器系统测试规则配置功能&#10;&#10;- 实现前端配置表单，支持温度、湿度范围及突变阈值设置&#10;- 添加后端API接口，支持测试规则的动态配置与持久化&#10;- 集成突变检测算法，监控传感器数据的稳定性变化&#10;- 增强测试引擎，支持丢包超时和数据连续性检测&#10;- 更新传感器模拟器，增加异常数据和突变场景模拟&#10;- 添加配置生效提示和错误处理机制&#10;- 优化日志输出，增加延迟统计和状态跟踪功能" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat(test): 添加车辆传感器系统测试规则配置功能&#10;&#10;- 实现前端配置表单，支持温度、湿度范围及突变阈值设置&#10;- 添加后端API接口，支持测试规则的动态配置与持久化&#10;- 集成突变检测算法，监控传感器数据的稳定性变化&#10;- 增强测试引擎，支持丢包超时和数据连续性检测&#10;- 更新传感器模拟器，增加异常数据和突变场景模拟&#10;- 添加配置生效提示和错误处理机制&#10;- 优化日志输出，增加延迟统计和状态跟踪功能" />
+    <MESSAGE value="chore(database): 更新测试数据库文件&#10;&#10;- 修改了传感器数据表的索引结构&#10;- 调整了设备ID索引的数据存储格式&#10;- 优化了数据库内部数据组织方式&#10;- 更新了传感器数据的时间戳记录机制&#10;- 改进了温度异常检测数据的存储效率" />
+    <MESSAGE value="feat(test): 添加车载传感器测试报告功能&#10;&#10;- 在前端App.vue中添加报告弹窗相关数据和打印功能&#10;- 实现停止测试后显示详细测试报告的对话框界面&#10;- 添加测试概览、测试结果和综合结论的展示组件&#10;- 在后端main.py中扩展测试报告数据结构和计算逻辑&#10;- 实现平均传输延迟计算和综合测试结论生成&#10;- 添加打印样式适配和报告数据持久化处理" />
+    <MESSAGE value="feat(sensor): 添加动态配置支持和延迟计算功能&#10;&#10;- 添加 test_config 全局变量支持动态阈值配置&#10;- 将固定阈值替换为从配置中读取的动态阈值&#10;- 实现发送时间提取和延迟毫秒计算功能&#10;- 修复延迟累加逻辑用于平均值计算&#10;- 移动延迟计算到数据入库之前确保准确性&#10;- 更新数据库模型以支持延迟字段存储" />
+    <MESSAGE value="feat(report): 实现摘要式测试报告功能&#10;&#10;- 添加后端测试数据统计功能，包括总延迟累计和平均延迟计算&#10;- 优化停止测试接口，返回包含通过率、平均延迟等指标的详细报告&#10;- 实现前端报告弹窗界面，使用el-dialog组件展示测试概览和结果&#10;- 集成el-descriptions组件显示测试统计数据和综合结论&#10;- 添加打印报告功能支持PDF导出&#10;- 增加打印样式适配确保报告打印效果" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat(report): 实现摘要式测试报告功能&#10;&#10;- 添加后端测试数据统计功能，包括总延迟累计和平均延迟计算&#10;- 优化停止测试接口，返回包含通过率、平均延迟等指标的详细报告&#10;- 实现前端报告弹窗界面，使用el-dialog组件展示测试概览和结果&#10;- 集成el-descriptions组件显示测试统计数据和综合结论&#10;- 添加打印报告功能支持PDF导出&#10;- 增加打印样式适配确保报告打印效果" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/project2$sensor_simulator.coverage" NAME="sensor_simulator 覆盖结果" MODIFIED="1772277623417" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/../vehicle-sensor-system" />

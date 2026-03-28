@@ -13,7 +13,7 @@ class SensorData(Base):
     id = Column(Integer, primary_key=True, index=True)
     device_id = Column(String, index=True)
 
-    # 【修改】类型改为 String，长度设大一点，足够容纳密文
+    # 类型为 String，长度大，足够容纳密文
     temperature = Column(String(100))
     humidity = Column(String(100))
 

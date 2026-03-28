@@ -39,9 +39,9 @@ test_session = {
     "abnormal_count": 0,      # 本次异常条数
     "total_latency": 0,       # 本次测试总延迟 (秒)
 }
-# 【新增】--- 全局状态：用于突变检测 ---
+# --- 全局状态：用于突变检测 ---
 device_last_values = {}
-# 【新增】--- 全局状态：动态测试规则配置 ---
+# --- 全局状态：动态测试规则配置 ---
 test_config = {
     "temp_min": -40.0,       # 温度下限
     "temp_max": 85.0,        # 温度上限
