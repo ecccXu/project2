@@ -203,7 +203,9 @@ def on_message(client, userdata, msg):
 
 
 def mqtt_thread_task():
+    global mqtt_client_instance
     client = mqtt_client.Client(CLIENT_ID)
+    mqtt_client_instance = client
     client.on_connect = on_connect
     client.on_message = on_message
     try:
@@ -345,3 +347,25 @@ def update_config(config: ConfigModel):
     test_config.update(config.dict())
     logger.info(f"[INFO] 测试规则已更新")
     return {"message": "配置更新成功", "data": test_config}
+
+class ControlModel(BaseModel):
+    command: str
+    params: dict = {}
+
+
+@app.post("/api/simulator/control")
+def control_simulator(cmd: ControlModel):
+    """代理前端指令，通过 MQTT 下发到模拟器"""
+    try:
+        control_topic = "vcar/sensors/environment/control"
+        payload = json.dumps({"command": cmd.command, "params": cmd.params})
+        # 获取在 on_connect 外部创建的 client 实例 (通过单例或全局拿)
+        # 简单做法：在 mqtt_thread_task 里面把 client 赋给全局变量
+        if 'mqtt_client_instance' not in globals():
+            return {"status": "error", "msg": "MQTT客户端未就绪"}
+
+        globals()['mqtt_client_instance'].publish(control_topic, payload, qos=1)
+        logger.info(f"[INFO] 转发控制指令到模拟器: {cmd.command}")
+        return {"status": "success", "msg": "指令已下发"}
+    except Exception as e:
+        return {"status": "error", "msg": str(e)}
