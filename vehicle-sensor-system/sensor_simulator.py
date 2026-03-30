@@ -5,7 +5,7 @@ import json
 import time
 import random
 import math
-from crypto_utils import encrypt_data  # 引入加密工具
+from crypto_utils import encrypt_data
 
 # ================= 配置区域 =================
 BROKER = "broker.emqx.io"
@@ -19,7 +19,7 @@ TOPIC = f"vehicle/{DEVICE_ID}/sensors/realtime"
 def on_connect(client, userdata, flags, rc, properties=None):
     """
     连接回调函数
-    增加了 properties=None 参数以兼容新版本 paho-mqtt
+    properties=None 参数以兼容新版本 paho-mqtt
     """
     if rc == 0:
         print(f"[INFO] 成功连接到 MQTT Broker: {BROKER}")
@@ -30,7 +30,7 @@ def on_connect(client, userdata, flags, rc, properties=None):
 def generate_sensor_data():
     """
     生成模拟传感器数据
-    【注意】这里必须只返回 data 字典，不要返回元组
+    必须只返回 data 字典，不返回元组
     """
     # 基础数值模拟
     base_temp = 25 + 3 * math.sin(time.time() / 10)
@@ -44,7 +44,7 @@ def generate_sensor_data():
         temp = round(random.uniform(90, 110), 2)
         print("[INFO] <模拟> 生成异常高温数据！")
 
-    # 2. 模拟数据突变 (5%概率)
+    # 2. 模拟数据突变 (15%概率)
     elif rand_val < 0.15:
         # 温度瞬间跳高 20 度，模拟接触不良或干扰
         temp = temp + 20.0
@@ -58,10 +58,7 @@ def generate_sensor_data():
         "send_time": time.time() * 1000,  # 记录毫秒级发送时间戳
         "data": {
             "temperature": temp,
-            "humidity": hum,
-            "acc_x": round(random.uniform(-0.1, 0.1), 2),
-            "acc_y": round(random.uniform(-0.1, 0.1), 2),
-            "acc_z": round(9.8 + random.uniform(-0.1, 0.1), 2)
+            "humidity": hum
         },
         "status": {
             "wifi_rssi": random.randint(-60, -40)
@@ -101,7 +98,8 @@ def run_simulator():
 
                 # 打印日志
                 temp = payload_dict['data']['temperature']
-                print(f"[INFO] Sent: 密文已发送 (原始温度: {temp}℃ )")
+                hum = payload_dict['data']['humidity']
+                print(f"[INFO] Sent: 密文已发送 (原始温度: {temp}℃, 原始湿度: {hum}%)")
             else:
                 print("加密失败")
 
