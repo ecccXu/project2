@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from paho.mqtt import client as mqtt_client
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
+from test_engine import run_content_test
 
 # 引入解密工具
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -75,28 +76,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# --- 核心功能：自动化测试引擎 ---
-def test_engine(data):
-    """
-    基于动态配置的测试引擎
-    """
-    errors = []
-    temp = data.get('temperature')
-    hum = data.get('humidity')
-
-    # 1. 温度范围测试 (读取全局配置)
-    if temp < test_config["temp_min"] or temp > test_config["temp_max"]:
-        errors.append(f"温度超限: {temp}℃")
-
-    # 2. 湿度范围测试
-    if hum < test_config["hum_min"] or hum > test_config["hum_max"]:
-        errors.append(f"湿度非法: {hum}%")
-
-    is_abnormal = len(errors) > 0
-    error_msg = "; ".join(errors)
-
-    return is_abnormal, error_msg
 
 
 # --- MQTT 消息处理 ---
@@ -171,8 +150,8 @@ def on_message(client, userdata, msg):
         }
 
         # ================= 4. 自动化测试引擎 (内容校验) =================
-        # 调用修改后的 test_engine，它会自动读取 test_config
-        is_abnormal_content, error_msg_content = test_engine(data['data'])
+        # 调用修改后的 run_content_test，它会自动读取 test_config
+        is_abnormal_content, error_msg_content = run_content_test(data['data'], test_config)
 
         # ================= 5. 合并所有的错误信息 =================
         all_errors = continuity_errors + stability_errors
