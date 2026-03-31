@@ -16,6 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from crypto_utils import decrypt_data
 
+# 引入测试引擎
+from test_bench import executor as bench_executor
+from fastapi.responses import JSONResponse
+
 # ================= 配置区域 =================
 BROKER = 'broker.emqx.io'
 PORT = 1883
@@ -165,3 +169,40 @@ def get_pool_status():
 @app.get("/")
 def read_root():
     return {"message": "台架测试系统 - 数据采集层运行中"}
+
+@app.post("/api/bench/run")
+def run_bench():
+    """触发台架自动化测试"""
+    if bench_executor.is_running:
+        return {"message": "测试正在执行中", "status": "error"}
+    bench_executor.start()
+    return {"message": "台架测试已触发", "status": "success"}
+
+@app.get("/api/bench/status")
+def get_bench_status():
+    """获取测试执行器实时状态"""
+    return {
+        "is_running": bench_executor.is_running,
+        "current_case": bench_executor.current_case_name,
+        "progress": f"{bench_executor.progress}/{bench_executor.total_cases}",
+        "results_summary": [{"case": r["case"], "status": r["status"]} for r in bench_executor.results]
+    }
+
+@app.get("/api/bench/logs")
+def get_bench_logs():
+    """获取实时控制台日志"""
+    # 返回最后 50 条日志
+    return {"logs": bench_executor.logs[-50:]}
+
+@app.get("/api/bench/report")
+def get_bench_report():
+    """获取最终详细报告数据"""
+    if bench_executor.is_running:
+        return {"message": "测试尚未结束", "status": "error"}
+    return {
+        "status": "success",
+        "total": bench_executor.total_cases,
+        "pass_count": sum(1 for r in bench_executor.results if r["status"] == "PASS"),
+        "fail_count": sum(1 for r in bench_executor.results if r["status"] == "FAIL"),
+        "details": bench_executor.results
+    }
