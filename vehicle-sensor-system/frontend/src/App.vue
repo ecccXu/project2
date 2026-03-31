@@ -3,12 +3,14 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 import * as echarts from 'echarts'
+import { ElNotification } from 'element-plus' // 导入通知组件
 
 const API_BASE = 'http://127.0.0.1:8000'
 
 // --- 数据状态 ---
 const tableData = ref([])
 const realtimeData = ref(null) // 初始为空，等待后端返回
+const lastErrorMsg = ref('') // 记录上一次弹窗的错误信息，用于防止重复刷屏
 let timer = null
 let chartInstance = null
 let lineChartInstance = null
@@ -20,6 +22,44 @@ const fetchRealtime = async () => {
     if (res.data) {
       realtimeData.value = res.data
       updateChart(res.data.in_car_temp)
+
+      // ================= 实时报警弹窗引擎 =================
+      const currentMsg = res.data.error_msg || ""
+
+      // 条件1：当前数据异常 且 错误信息发生了变化（防止同一个错误每2秒弹一次）
+      if (res.data.is_abnormal && currentMsg !== lastErrorMsg.value) {
+
+        // 判断是否是致命的硬件故障，决定弹窗样式
+        const isHardwareFault = res.data.status === "FAULT"
+
+        ElNotification({
+          title: isHardwareFault ? '🚨 硬件故障报警' : '⚠️ 数据异常报警',
+          message: `<div style="line-height: 1.5;">
+                      <b>触发源：</b>${res.data.sensor_id}<br>
+                      <b>异常详情：</b>${currentMsg}
+                    </div>`,
+          dangerouslyUseHTMLString: true, // 允许解析上面的 HTML
+          type: 'error',
+          duration: 0, // 设为 0 不自动关闭，必须手动点 X，强制测试员关注
+          position: 'top-right'
+        })
+
+        // 更新锁的状态
+        lastErrorMsg.value = currentMsg
+      }
+      // 条件2：如果数据恢复正常了，清空锁的状态，并弹一个绿色提示
+      else if (!res.data.is_abnormal && lastErrorMsg.value !== "") {
+        ElNotification({
+          title: '✅ 恢复正常',
+          message: '传感器数据已回归正常阈值范围',
+          type: 'success',
+          duration: 3000,
+          position: 'top-right'
+        })
+        lastErrorMsg.value = "" // 清空锁
+      }
+      // ================= 报警引擎结束 =================
+
     }
   } catch (e) { console.error('获取实时数据失败', e) }
 }
