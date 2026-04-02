@@ -279,15 +279,68 @@ class TestBenchExecutor:
         self._log(f"========== 结束执行: {case_name} [{result['status']}] ==========")
 
     # ==========================================
-    # 调度引擎（先暂时挂起，下一步改造）
+    # 调度引擎（核心重构：支持动态配置解析）
     # ==========================================
     def _run_suite(self, selected_cases_config):
-        """下一步会改造这里，先保留空实现防报错"""
-        pass
+        """
+        根据传入的配置列表动态执行用例
+        :param selected_cases_config: 列表，例如:
+            [
+                {"id": "case_temp_step", "params": {"target_temp": 85.0}},
+                {"id": "case_aes_tamper", "params": {}}
+            ]
+        """
+        self.is_running = True
+        self.results = []
+        self.logs = []
+        self.total_cases = len(selected_cases_config)
+        self.progress = 0
+
+        self._log("==================================================")
+        self._log(f"   台架测试启动 | 本次执行 {self.total_cases} 个用例")
+        self._log("==================================================")
+
+        for case_config in selected_cases_config:
+            case_id = case_config.get("id")
+            custom_params = case_config.get("params", {})
+
+            # 1. 从注册中心查找用例元数据
+            case_meta = self.registry.get(case_id)
+
+            if not case_meta:
+                self._log(f"警告：找不到用例 ID '{case_id}'，跳过执行！")
+                self.progress += 1
+                continue
+
+            # 2. 合并参数：用自定义参数覆盖默认参数 (实现参数编辑功能的后端支撑)
+            final_params = case_meta["default_params"].copy()
+            final_params.update(custom_params)
+
+            # 3. 动态获取并执行绑定的测试函数
+            executor_func = case_meta["executor"]
+            try:
+                # 将合并后的参数字典传入执行器
+                executor_func(final_params)
+            except Exception as e:
+                self._log(f"致命错误：执行 {case_id} 时发生未捕获异常: {str(e)}")
+
+            self.progress += 1
+            self._wait(2)  # 用例间隔，让系统恢复平静
+
+        self.is_running = False
+        self.current_case_name = "测试完成"
+        self._log("==================================================")
+        self._log("   选中用例执行完毕！")
+        self._log("==================================================")
 
     def start(self, config=[]):
-        if self.is_running: return False
-        # 暂时传空
+        """外部调用接口：开启测试线程，传入配置列表"""
+        if self.is_running:
+            return False
+        if not config:
+            self._log("错误：未接收到任何测试用例配置！")
+            return False
+
         self._thread = threading.Thread(target=self._run_suite, args=(config,), daemon=True)
         self._thread.start()
         return True

@@ -165,22 +165,51 @@ def get_pool_status():
         "latest_in_queue": latest_in_queue
     }
 
-
 @app.get("/")
 def read_root():
     return {"message": "台架测试系统 - 数据采集层运行中"}
 
+
+# --- 台架 API 接口改造 ---
+from typing import List, Dict # 确保导入了 List 和 Dict
+
+
 @app.post("/api/bench/run")
-def run_bench():
-    """触发台架自动化测试"""
-    if bench_executor.is_running:
-        return {"message": "测试正在执行中", "status": "error"}
-    bench_executor.start()
-    return {"message": "台架测试已触发", "status": "success"}
+def run_bench(req: List[Dict]):  # 直接声明接收一个字典列表
+    """
+    触发台架测试
+    前端直接发送 JSON 数组，例如:
+    [{"id": "case_temp_step", "params": {"target_temp": 90}}]
+    """
+    if not req:
+        return {"message": "提交的用例列表为空", "status": "error"}
+
+    # req 本身就是那个列表，直接扔给执行器
+    success = bench_executor.start(config=req)
+    if success:
+        return {"message": f"已下发 {len(req)} 个用例至台架", "status": "success"}
+    else:
+        return {"message": "台架正在运行中，请勿重复提交", "status": "error"}
+
+# 获取元数据接口（替代之前的 debug 接口，正式提供给前端拉取用例列表）
+@app.get("/api/bench/cases")
+def get_available_cases():
+    """获取所有可用的测试用例及其默认参数"""
+    registry = bench_executor.registry
+    # 将内部执行器函数剥离，只把元数据返回给前端
+    safe_metadata = []
+    for case_id, meta in registry.items():
+        safe_metadata.append({
+            "id": case_id,
+            "name": meta["name"],
+            "type": meta["type"],
+            "default_params": meta["default_params"]
+        })
+    return {"cases": safe_metadata}
+
 
 @app.get("/api/bench/status")
 def get_bench_status():
-    """获取测试执行器实时状态"""
     return {
         "is_running": bench_executor.is_running,
         "current_case": bench_executor.current_case_name,
@@ -188,15 +217,14 @@ def get_bench_status():
         "results_summary": [{"case": r["case"], "status": r["status"]} for r in bench_executor.results]
     }
 
+
 @app.get("/api/bench/logs")
 def get_bench_logs():
-    """获取实时控制台日志"""
-    # 返回最后 50 条日志
     return {"logs": bench_executor.logs[-50:]}
+
 
 @app.get("/api/bench/report")
 def get_bench_report():
-    """获取最终详细报告数据"""
     if bench_executor.is_running:
         return {"message": "测试尚未结束", "status": "error"}
     return {
