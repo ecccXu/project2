@@ -1,0 +1,92 @@
+[
+    {
+        "id": "custom_c4e2aa69",
+        "name": "API???????",
+        "steps": [
+            {
+                "type": "action",
+                "action": "OVERRIDE_VALUE",
+                "params": {
+                    "target": "in_car_temp",
+                    "value": 50.0
+                }
+            },
+            {
+                "type": "action",
+                "action": "WAIT",
+                "params": {
+                    "seconds": 3
+                }
+            },
+            {
+                "type": "assertion",
+                "action": "ASSERT_VALUE",
+                "params": {
+                    "target": "in_car_temp",
+                    "operator": ">",
+                    "expected_value": 45.0
+                }
+            }
+        ]
+    },
+    {
+        "id": "custom_1cb5cec2",
+        "name": "API???????",
+        "steps": [
+            {
+                "type": "action",
+                "action": "OVERRIDE_VALUE",
+                "params": {
+                    "target": "in_car_temp",
+                    "value": 50.0
+                }
+            },
+            {
+                "type": "action",
+                "action": "WAIT",
+                "params": {
+                    "seconds": 3
+                }
+            },
+            {
+                "type": "assertion",
+                "action": "ASSERT_VALUE",
+                "params": {
+                    "target": "in_car_temp",
+                    "operator": ">",
+                    "expected_value": 45.0
+                }
+            }
+        ]
+    },
+    {
+        "id": "custom_02e74a14",
+        "name": "Postman创建的温控测试",
+        "steps": [
+            {
+                "type": "action",
+                "action": "OVERRIDE_VALUE",
+                "params": {
+                    "target": "in_car_temp",
+                    "value": 50.0
+                }
+            },
+            {
+                "type": "action",
+                "action": "WAIT",
+                "params": {
+                    "seconds": 3
+                }
+            },
+            {
+                "type": "assertion",
+                "action": "ASSERT_VALUE",
+                "params": {
+                    "target": "in_car_temp",
+                    "operator": ">",
+                    "expected_value": 45.0
+                }
+            }
+        ]
+    }
+]

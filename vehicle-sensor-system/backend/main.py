@@ -234,3 +234,80 @@ def get_bench_report():
         "fail_count": sum(1 for r in bench_executor.results if r["status"] == "FAIL"),
         "details": bench_executor.results
     }
+
+
+# --- 自定义用例 CRUD API ---
+import uuid as uuid_lib
+from pydantic import BaseModel
+
+
+# 自定义用例的请求体格式
+class CustomCasePayload(BaseModel):
+    name: str
+    steps: list
+
+
+CUSTOM_CASES_FILE = "custom_cases.json"
+
+
+@app.get("/api/bench/custom_cases")
+def get_custom_cases():
+    """获取所有已保存的自定义用例"""
+    try:
+        with open(CUSTOM_CASES_FILE, 'r', encoding='utf-8') as f:
+            return {"cases": json.load(f)}
+    except:
+        return {"cases": []}
+
+
+@app.post("/api/bench/custom_cases")
+def save_custom_case(case: CustomCasePayload):
+    """保存一个新的自定义用例"""
+    try:
+        with open(CUSTOM_CASES_FILE, 'r', encoding='utf-8') as f:
+            cases = json.load(f)
+    except:
+        cases = []
+
+    # 生成唯一 ID
+    new_id = f"custom_{uuid_lib.uuid4().hex[:8]}"
+    new_case = {
+        "id": new_id,
+        "name": case.name,
+        "steps": case.steps
+    }
+
+    cases.append(new_case)
+
+    with open(CUSTOM_CASES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(cases, f, ensure_ascii=False, indent=4)
+
+    # 通知执行器刷新内存
+    bench_executor.reload_registry()
+
+    return {"message": "用例保存成功", "id": new_id}
+
+
+@app.delete("/api/bench/custom_cases/{case_id}")
+def delete_custom_case(case_id: str):
+    """删除指定的自定义用例"""
+    try:
+        with open(CUSTOM_CASES_FILE, 'r', encoding='utf-8') as f:
+            cases = json.load(f)
+    except:
+        return {"message": "文件不存在或为空", "status": "error"}
+
+    original_len = len(cases)
+    # 过滤掉目标 ID
+    cases = [c for c in cases if c.get("id") != case_id]
+
+    if len(cases) == original_len:
+        return {"message": "未找到该用例", "status": "error"}
+
+    with open(CUSTOM_CASES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(cases, f, ensure_ascii=False, indent=4)
+
+    # 通知执行器刷新内存
+    bench_executor.reload_registry()
+
+    return {"message": "删除成功", "status": "success"}

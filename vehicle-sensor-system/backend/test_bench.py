@@ -5,6 +5,9 @@ import json
 import logging
 import threading
 from datetime import datetime
+import operator # 新增：用于动态执行比较运算
+import os
+import uuid # 用于生成唯一用例 ID
 
 import main as backend_main
 from crypto_utils import decrypt_data
@@ -23,11 +26,13 @@ class TestBenchExecutor:
         self.logs = []
         self._thread = None
 
-        # 【新增】初始化用例注册中心
+        # 定义自定义用例的持久化文件路径
+        self.custom_cases_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_cases.json")
+        # 初始化用例注册中心
         self.registry = self._build_registry()
 
     # ==========================================
-    # 核心动作方法（保持不变）
+    # 核心动作方法
     # ==========================================
     def _log(self, msg):
         timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
@@ -58,54 +63,62 @@ class TestBenchExecutor:
             queue_list = list(backend_main.data_queue)
             return queue_list[-count:] if len(queue_list) >= count else queue_list
 
-    # ==========================================
-    # 【核心重构】用例注册中心构建
-    # ==========================================
     def _build_registry(self):
-        """
-        构建用例元数据字典。
-        key: 用例唯一标识 ID (前端用来识别用例)
-        value: dict 包含 name(显示名), type(分类), default_params(默认参数), executor(绑定的执行函数)
-        """
-        return {
+        # 1. 基础预置用例
+        base_registry = {
             "case_temp_step": {
                 "name": "极限温度阶跃响应测试",
                 "type": "dynamic_performance",
-                "default_params": {
-                    "base_temp": 20.0,  # 起始基准温度
-                    "target_temp": 80.0,  # 阶跃目标温度
-                    "timeout": 15.0,  # 响应超时时间(秒)
-                    "max_overshoot": 2.0  # 允许的最大超调量(℃)
-                },
+                "default_params": {"base_temp": 20.0, "target_temp": 80.0, "timeout": 15.0, "max_overshoot": 2.0},
                 "executor": self._case_1_temp_step_response
             },
             "case_fault_diagnosis": {
                 "name": "硬件断路故障诊断测试",
                 "type": "fault_injection",
-                "default_params": {
-                    "target": "in_car_temp",  # 注入故障的目标
-                    "fault_type": "OPEN_CIRCUIT",  # 故障类型
-                    "capture_timeout": 5.0  # 捕获超时时间(秒)
-                },
+                "default_params": {"target": "in_car_temp", "fault_type": "OPEN_CIRCUIT", "capture_timeout": 5.0},
                 "executor": self._case_2_hardware_fault_diagnosis
             },
             "case_scenario_anti": {
                 "name": "复杂工况动态抗扰测试",
                 "type": "scenario_follow",
-                "default_params": {
-                    "scenario_name": "tunnel_following",  # 预设工况名
-                    "wait_time": 15.0,  # 等待惯性稳定时间
-                    "check_samples": 10  # 统计均值所需的样本数
-                },
+                "default_params": {"scenario_name": "tunnel_following", "wait_time": 15.0, "check_samples": 10},
                 "executor": self._case_3_complex_scenario_anti_interference
             },
             "case_aes_tamper": {
                 "name": "安全通信链路抗篡改测试",
                 "type": "security",
-                "default_params": {},  # 此用例无自定义参数
+                "default_params": {},
                 "executor": self._case_4_aes_tamper_resistance
             }
         }
+
+        # 2. 动态加载自定义用例文件
+        custom_cases = self._load_custom_cases_from_file()
+        for case in custom_cases:
+            base_registry[case["id"]] = {
+                "name": case["name"],
+                "type": "custom",
+                # 注意：自定义用例的 default_params 就是它自己本身（包含 name 和 steps）
+                "default_params": case,
+                "executor": self._execute_custom_steps
+            }
+
+        return base_registry
+
+    def _load_custom_cases_from_file(self):
+        """从 JSON 文件读取自定义用例"""
+        if not os.path.exists(self.custom_cases_file):
+            return []
+        try:
+            with open(self.custom_cases_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"读取自定义用例文件失败: {e}")
+            return []
+
+    def reload_registry(self):
+        """提供对外接口，当文件变更时重新加载注册表"""
+        self.registry = self._build_registry()
 
     # ==========================================
     # 测试用例实现（改造为接收 params 字典）
@@ -277,6 +290,115 @@ class TestBenchExecutor:
         result["duration"] = round(time.time() - start_time, 2)
         self.results.append(result)
         self._log(f"========== 结束执行: {case_name} [{result['status']}] ==========")
+
+    # ==========================================
+    # 通用 DSL 解释器引擎
+    # ==========================================
+    def _execute_custom_steps(self, params):
+        """
+        解释并执行用户在前端编排的 JSON 步骤列表
+        :param params: 字典，必须包含 "steps" 键
+        """
+        # 获取步骤列表，如果没有则直接报错
+        steps = params.get("steps", [])
+        if not steps:
+            raise ValueError("自定义用例缺少 steps 步骤定义")
+
+        # 定义运算符映射表，将 JSON 字符串映射为 Python 的 operator 函数
+        ops_map = {
+            ">": operator.gt,
+            "<": operator.lt,
+            "==": operator.eq,
+            "!=": operator.ne,
+            ">=": operator.ge,
+            "<=": operator.le
+        }
+
+        case_name = params.get("name", "未命名自定义用例")
+        self.current_case_name = case_name
+        self._log(f"========== 开始执行自定义用例: {case_name} ==========")
+        self._log(f"共加载 {len(steps)} 个步骤积木")
+        start_time = time.time()
+        result = {"case": case_name, "status": "PASS", "details": []}
+
+        try:
+            for index, step in enumerate(steps, start=1):
+                step_type = step.get("type")
+                action_name = step.get("action")
+                step_params = step.get("params", {})
+
+                self._log(f"[步骤 {index}] 解析积木: {step_type} -> {action_name}")
+
+                # ----------------- 处理动作积木 -----------------
+                if step_type == "action":
+                    if action_name == "WAIT":
+                        self._wait(step_params.get("seconds", 1))
+                    elif action_name in ["SET_SCENARIO", "INJECT_FAULT", "OVERRIDE_VALUE", "CLEAR_FAULT"]:
+                        self._send_command(action_name.lower(), step_params)
+                    else:
+                        self._log(f"警告：未知的动作指令 '{action_name}'，跳过")
+
+                # ----------------- 处理断言积木 -----------------
+                elif step_type == "assertion":
+                    # 每次断言前稍微等一下，给底层数据流动一点时间
+                    self._wait(0.5)
+                    latest_data = self._get_latest()
+
+                    if action_name == "ASSERT_VALUE":
+                        target_key = step_params.get("target")
+                        op_symbol = step_params.get("operator")
+                        expected = step_params.get("expected_value")
+
+                        actual_val = latest_data.get(target_key, 0)
+                        op_func = ops_map.get(op_symbol)
+
+                        if not op_func:
+                            raise ValueError(f"断言错误：不支持的运算符 '{op_symbol}'")
+
+                        # 动态执行比较：例如 operator.gt(actual_val, expected)
+                        is_pass = op_func(float(actual_val), float(expected))
+
+                        if is_pass:
+                            self._log(f"  ✅ 断言通过: {target_key} ({actual_val}) {op_symbol} {expected}")
+                        else:
+                            raise AssertionError(
+                                f"断言失败: {target_key} 实际值 {actual_val}, 期望 {op_symbol} {expected}")
+
+                    elif action_name == "ASSERT_STATUS":
+                        expected_status = step_params.get("expected_status")
+                        actual_status = latest_data.get("status")
+                        if actual_status == expected_status:
+                            self._log(f"  ✅ 断言通过: 状态码匹配 [{actual_status}]")
+                        else:
+                            raise AssertionError(f"断言失败: 期望状态 [{expected_status}], 实际 [{actual_status}]")
+
+                    elif action_name == "ASSERT_FAULT_CODE":
+                        expected_code = step_params.get("expected_code")
+                        actual_code = latest_data.get("fault_code")
+                        if actual_code == expected_code:
+                            self._log(f"  ✅ 断言通过: 故障码匹配 [{actual_code}]")
+                        else:
+                            raise AssertionError(f"断言失败: 期望故障码 [{expected_code}], 实际 [{actual_code}]")
+                    else:
+                        self._log(f"警告：未知的断言指令 '{action_name}'")
+
+                time.sleep(0.5)  # 步骤间短暂停顿
+
+        except AssertionError as e:
+            # 捕获断言失败，标记用例 FAIL，并跳出循环
+            result["status"] = "FAIL"
+            result["details"].append(str(e))
+            self._log(f"❌ 流程中断：{str(e)}")
+        except Exception as e:
+            result["status"] = "ERROR"
+            result["details"].append(f"执行期发生异常: {str(e)}")
+            self._log(f"❌ 流程崩溃：{str(e)}")
+        finally:
+            # 确保测试结束后清理现场
+            self._send_command("clear_fault", {})
+            result["duration"] = round(time.time() - start_time, 2)
+            self.results.append(result)
+            self._log(f"========== 结束执行: {case_name} [{result['status']}] ==========")
 
     # ==========================================
     # 调度引擎（核心重构：支持动态配置解析）
