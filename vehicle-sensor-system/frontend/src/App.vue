@@ -1,6 +1,7 @@
 <!-- src/App.vue -->
 <script setup>
 import { Top, Bottom, Delete } from '@element-plus/icons-vue'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import axios from 'axios'
 import * as echarts from 'echarts'
@@ -130,6 +131,33 @@ const saveBuilderCase = async () => {
   }
 }
 
+const deleteCustomCase = async (caseId) => {
+  try {
+    // 弹出二次确认框
+    await ElMessageBox.confirm('确定要删除此自定义用例吗？此操作不可恢复。', '警告', {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+      customStyle: { backgroundColor: '#2d2d30', borderColor: '#3e3e42', color: '#d4d4d4' }, // 适配暗色主题
+      confirmButtonClass: 'el-button--danger'
+    })
+
+    // 确认后调用接口
+    const res = await axios.delete(`${API_BASE}/api/bench/custom_cases/${caseId}`)
+    if (res.data && res.data.status === 'success') {
+      ElMessage.success('用例已删除')
+      fetchCases() // 刷新左侧列表
+    } else {
+      ElMessage.error(res.data.message || '删除失败')
+    }
+  } catch (e) {
+    // 用户点了取消，什么都不做
+    if (e !== 'cancel') {
+      console.error('删除异常', e)
+    }
+  }
+}
+
 // --- 轮询与报告逻辑 ---
 const startPolling = () => {
   stopPolling()
@@ -240,12 +268,25 @@ const formatLog = (log) => {
               {{ c.name }}
               <el-tag v-if="c.type === 'custom'" size="small" type="warning" style="margin-left: 5px;">Custom</el-tag>
             </span>
-            <span class="status-icon" style="margin-left: auto;">
-              <span v-if="getCaseStatus(c.id) === 'PENDING'" class="dot pending"></span>
-              <span v-else-if="getCaseStatus(c.id) === 'RUNNING'" class="dot running"></span>
-              <span v-else-if="getCaseStatus(c.id) === 'PASS'" class="dot pass">✓</span>
-              <span v-else class="dot fail">✕</span>
-            </span>
+            <div style="display: flex; align-items: center; margin-left: auto;">
+              <!-- 删除按钮：仅对自定义用例且非运行状态时显示 -->
+              <el-button
+                v-if="c.type === 'custom' && !benchStatus.is_running"
+                type="danger"
+                :icon="Delete"
+                size="small"
+                circle
+                style="margin-right: 8px;"
+                @click.stop="deleteCustomCase(c.id)"
+              />
+              <!-- 原有的状态指示灯 -->
+              <span class="status-icon">
+                <span v-if="getCaseStatus(c.id) === 'PENDING'" class="dot pending"></span>
+                <span v-else-if="getCaseStatus(c.id) === 'RUNNING'" class="dot running"></span>
+                <span v-else-if="getCaseStatus(c.id) === 'PASS'" class="dot pass">✓</span>
+                <span v-else class="dot fail">✕</span>
+              </span>
+            </div>
           </div>
         </div>
         <!-- 新增：底部创建按钮 -->
