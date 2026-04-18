@@ -7,36 +7,317 @@ import sys
 import os
 import time
 from collections import deque
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import List, Dict, Optional
 
-from fastapi import FastAPI
-from paho.mqtt import client as mqtt_client
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-
-# 引入解密工具
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from crypto_utils import decrypt_data
-
-# 引入测试引擎
-from test_bench import executor as bench_executor
 from fastapi.responses import JSONResponse
+from paho.mqtt import client as mqtt_client
+from sqlalchemy.orm import Session
 
-# ================= 配置区域 =================
-BROKER = 'broker.emqx.io'
-PORT = 1883
-TOPIC = "vcar/sensors/environment/data"
-CONTROL_TOPIC = "vcar/sensors/environment/control"
-CLIENT_ID = "Backend_TestBench_V1"
-# ===========================================
+# =========================================
+# 本地模块导入
+# 顺序很重要：database → models → 其他
+# =========================================
+from database import get_db, init_db, SessionLocal
+import models
+from models import SensorData, TestReport
+from crypto_utils import decrypt_data, encrypt_data
+from test_engine import run_content_test, get_default_config
 
-# --- 配置日志 ---
+# test_bench 在文件末尾导入，解决循环导入问题
+# （test_bench需要本文件的 data_lock 等，但本文件不在顶部导入它）
+
+# ==========================================
+# 日志配置
+# ==========================================
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-logger = logging.getLogger("TestBench")
+logger = logging.getLogger("MainServer")
 
-app = FastAPI()
+
+# ==========================================
+# MQTT 配置
+#
+# 多节点Topic设计：
+#   数据主题: vcar/sensors/+/data
+#     + 是MQTT单层通配符，匹配任意node_id
+#     例如：vcar/sensors/ENV_SIM_001/data
+#           vcar/sensors/ESP32_001/data   ← ESP32接入时自动支持
+#
+#   控制主题: vcar/sensors/{node_id}/control
+#     后端向指定节点下发指令，精确控制
+#
+# ESP32接入说明（硬件预留接口）：
+#   ESP32只需：
+#   1. 连接同一Broker
+#   2. 使用相同AES密钥
+#   3. 发布到 vcar/sensors/ESP32_001/data
+#   4. 订阅 vcar/sensors/ESP32_001/control
+#   后端无需任何改动即可自动识别新节点
+# ==========================================
+BROKER      = os.environ.get('MQTT_BROKER', 'broker.emqx.io')
+PORT        = int(os.environ.get('MQTT_PORT', '1883'))
+CLIENT_ID   = "Backend_TestBench_V2"
+DATA_TOPIC  = "vcar/sensors/+/data"       # 订阅所有节点的数据
+CTRL_TOPIC  = "vcar/sensors/+/control"    # 订阅所有节点的控制回显
+
+
+# ==========================================
+# 核心数据层：多节点内存数据池
+#
+# 数据结构设计：
+#
+#   node_data_pool = {
+#       "ENV_SIM_001": {          ← 模拟器节点
+#           "in_car_temp": 25.0,
+#           "status": "NORMAL",
+#           ...
+#       },
+#       "ESP32_001": {            ← ESP32硬件节点（接入后自动出现）
+#           "in_car_temp": 26.5,
+#           ...
+#       }
+#   }
+#
+#   node_queue_pool = {
+#       "ENV_SIM_001": deque([...], maxlen=100),
+#       "ESP32_001":   deque([...], maxlen=100),
+#   }
+#
+#   node_online_time = {
+#       "ENV_SIM_001": "2024-01-15 14:30:00",  ← 首次上线时间
+#       "ESP32_001":   "2024-01-15 15:00:00",
+#   }
+# ==========================================
+data_lock        = threading.Lock()
+node_data_pool   = {}   # {node_id: latest_data_dict}
+node_queue_pool  = {}   # {node_id: deque}
+node_online_time = {}   # {node_id: 首次上线时间字符串}
+
+DATA_QUEUE_MAX_LEN = 100
+
+# 全局告警阈值配置（可通过API动态修改）
+current_test_config = get_default_config()
+config_lock = threading.Lock()
+
+# 全局MQTT客户端实例（供test_bench下发指令使用）
+mqtt_client_instance = None
+
+
+# ==========================================
+# 工具函数
+# ==========================================
+def _get_node_id_from_topic(topic: str) -> Optional[str]:
+    """
+    从MQTT Topic中提取node_id
+
+    例如：
+      "vcar/sensors/ENV_SIM_001/data" → "ENV_SIM_001"
+      "vcar/sensors/ESP32_001/data"   → "ESP32_001"
+    """
+    parts = topic.split('/')
+    # 格式: vcar / sensors / {node_id} / data
+    if len(parts) == 4 and parts[0] == 'vcar' and parts[1] == 'sensors':
+        return parts[2]
+    return None
+
+
+def _init_node_pool(node_id: str):
+    """
+    首次发现新节点时初始化其数据池
+    线程安全：调用方需持有 data_lock
+    """
+    if node_id not in node_data_pool:
+        node_data_pool[node_id]   = {}
+        node_queue_pool[node_id]  = deque(maxlen=DATA_QUEUE_MAX_LEN)
+        node_online_time[node_id] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        logger.info(f"[多节点] 发现新节点: {node_id}，已初始化数据池")
+
+
+# ==========================================
+# 数据库写入（异步，不阻塞MQTT线程）
+# ==========================================
+def _save_to_db(parsed_item: dict):
+    """
+    将一条传感器数据异步写入数据库
+    在独立线程中执行，不阻塞MQTT消息处理
+    """
+    db = SessionLocal()
+    try:
+        record = SensorData(
+            sensor_id    = parsed_item.get("sensor_id", "UNKNOWN"),
+            in_car_temp  = encrypt_data(str(parsed_item.get("in_car_temp", ""))),
+            out_car_temp = encrypt_data(str(parsed_item.get("out_car_temp", ""))),
+            humidity     = encrypt_data(str(parsed_item.get("humidity", ""))),
+            pm25         = encrypt_data(str(parsed_item.get("pm25", ""))),
+            co2          = encrypt_data(str(parsed_item.get("co2", ""))),
+            status       = parsed_item.get("status", "NORMAL"),
+            fault_code   = parsed_item.get("fault_code", "NONE"),
+            latency_ms   = parsed_item.get("latency_ms", 0),
+            is_abnormal  = parsed_item.get("is_abnormal", False),
+            error_msg    = parsed_item.get("error_msg", None),
+            server_time  = datetime.utcnow(),
+        )
+        db.add(record)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[数据库] 写库失败: {e}")
+    finally:
+        db.close()
+
+
+# ==========================================
+# MQTT 回调函数
+# ==========================================
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        logger.info(f"[MQTT] 成功连接到 Broker: {BROKER}:{PORT}")
+        client.subscribe(DATA_TOPIC, qos=1)
+        logger.info(f"[MQTT] 已订阅多节点数据主题: {DATA_TOPIC}")
+    else:
+        logger.error(f"[MQTT] 连接失败，错误码: {rc}")
+
+
+def on_message(client, userdata, msg):
+    """
+    MQTT消息处理：解密 → 解析 → 合规校验 → 更新内存池 → 异步写库
+
+    职责边界：
+      本函数只负责数据采集和分发
+      业务判定由 test_engine.run_content_test() 负责
+      数据库写入在独立线程中异步执行
+    """
+    # 忽略控制主题的消息
+    if '/control' in msg.topic:
+        return
+
+    # 1. 从Topic提取node_id
+    node_id = _get_node_id_from_topic(msg.topic)
+    if not node_id:
+        logger.warning(f"[MQTT] 无法解析节点ID，Topic: {msg.topic}")
+        return
+
+    try:
+        # 2. AES-CBC解密
+        encrypted_payload = msg.payload.decode('utf-8')
+        decrypted_json    = decrypt_data(encrypted_payload)
+        if decrypted_json is None:
+            logger.error(f"[{node_id}] 解密失败，丢弃数据包（可能被篡改）")
+            return
+
+        # 3. JSON解析
+        data        = json.loads(decrypted_json)
+        sensor_data = data.get('data', {})
+
+        # 4. 计算传输延迟
+        send_time  = data.get('send_time')
+        latency_ms = int(time.time() * 1000 - send_time) if send_time else None
+
+        # 5. 构建标准化数据项
+        parsed_item = {
+            "sensor_id":   node_id,
+            "timestamp":   data.get('timestamp'),
+            "in_car_temp": sensor_data.get('in_car_temp', 0.0),
+            "out_car_temp":sensor_data.get('out_car_temp', 0.0),
+            "humidity":    sensor_data.get('humidity', 0.0),
+            "pm25":        sensor_data.get('pm25', 0.0),
+            "co2":         sensor_data.get('co2', 0.0),
+            "status":      data.get('status', 'NORMAL'),
+            "fault_code":  data.get('fault_code', 'NONE'),
+            "latency_ms":  latency_ms,
+        }
+
+        # 6. 第一层测试：合规性校验
+        with config_lock:
+            cfg = current_test_config.copy()
+        is_abnormal, error_msg = run_content_test(parsed_item, config=cfg)
+        parsed_item["is_abnormal"] = is_abnormal
+        parsed_item["error_msg"]   = error_msg
+
+        if is_abnormal:
+            logger.warning(f"[{node_id}] 数据异常告警: {error_msg}")
+
+        # 7. 线程安全地更新多节点内存数据池
+        with data_lock:
+            _init_node_pool(node_id)
+            node_data_pool[node_id].update(parsed_item)
+            node_queue_pool[node_id].append(parsed_item)
+
+        # 8. 异步写库（独立线程，不阻塞消息处理）
+        threading.Thread(
+            target=_save_to_db,
+            args=(parsed_item,),
+            daemon=True
+        ).start()
+
+    except json.JSONDecodeError:
+        logger.error(f"[{node_id}] JSON解析失败")
+    except Exception as e:
+        logger.error(f"[{node_id}] 消息处理异常: {e}")
+
+
+def mqtt_thread_task():
+    """MQTT后台线程：连接Broker并保持消息循环"""
+    global mqtt_client_instance
+    client = mqtt_client.Client(CLIENT_ID)
+    mqtt_client_instance = client
+    client.on_connect = on_connect
+    client.on_message = on_message
+    try:
+        client.connect(BROKER, PORT, keepalive=60)
+        client.loop_forever()
+    except Exception as e:
+        logger.error(f"[MQTT] 线程异常退出: {e}")
+
+
+# ==========================================
+# FastAPI 应用初始化
+# ==========================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    应用生命周期管理
+    替代已废弃的 @app.on_event("startup")
+    """
+    # 启动阶段
+    logger.info("[系统启动] 正在初始化...")
+
+    # 1. 初始化数据库（建表）
+    init_db()
+
+    # 2. 延迟导入 test_bench（解决循环导入）
+    #    此时 main.py 已完全加载，test_bench 可以安全导入
+    from test_bench import executor as _executor
+    app.state.executor = _executor
+    logger.info("[系统启动] 测试引擎初始化完成")
+
+    # 3. 启动MQTT后台线程
+    thread = threading.Thread(target=mqtt_thread_task, daemon=True)
+    thread.start()
+    logger.info("[系统启动] MQTT数据采集线程已启动")
+
+    logger.info("[系统启动] 全部初始化完成，服务就绪 ✅")
+    yield
+
+    # 关闭阶段
+    logger.info("[系统关闭] 正在清理资源...")
+    if mqtt_client_instance:
+        mqtt_client_instance.disconnect()
+
+
+app = FastAPI(
+    title="车载环境传感器测试系统",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -45,269 +326,367 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==========================================
-# 核心数据层：内存数据池（取代直接入库）
-# ==========================================
-# 线程锁，保证 FastAPI 线程和 MQTT 线程读写安全
-data_lock = threading.Lock()
-
-# 最新单条数据字典（供测试用例实时读取）
-latest_sensor_data = {
-    "raw_dict": None,  # 完整的原始 JSON 字典
-    "in_car_temp": 0.0,
-    "out_car_temp": 0.0,
-    "humidity": 0.0,
-    "pm25": 0.0,
-    "co2": 0.0,
-    "status": "NORMAL",
-    "fault_code": "NONE",
-    "latency_ms": 0
-}
-
-# 滑动窗口数据队列（保留最近 100 条，供趋势分析使用）
-DATA_QUEUE_MAX_LEN = 100
-data_queue = deque(maxlen=DATA_QUEUE_MAX_LEN)
-
-# 全局 MQTT 客户端实例（供后续 API 下发控制指令使用）
-mqtt_client_instance = None
-
 
 # ==========================================
-
-
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        logger.info(f"[数据采集层] 成功连接到 MQTT Broker")
-        client.subscribe(TOPIC)
-        client.subscribe(CONTROL_TOPIC)  # 顺便订阅控制主题的回显(可选)
-    else:
-        logger.error(f"[数据采集层] 连接失败，代码: {rc}")
-
-
-def on_message(client, userdata, msg):
+# API路由：节点管理
+# ==========================================
+@app.get("/api/nodes", summary="获取所有在线节点列表")
+def get_nodes():
     """
-    纯粹的数据采集与解密逻辑，绝对不包含任何业务判定和数据库操作
+    返回当前所有已上线的节点信息
+    ESP32接入后会自动出现在列表中，无需任何后端改动
     """
-    global latest_sensor_data
-
-    # 忽略控制主题的自发回显
-    if msg.topic == CONTROL_TOPIC:
-        return
-
-    try:
-        # 1. 安全解密
-        encrypted_payload = msg.payload.decode()
-        decrypted_json = decrypt_data(encrypted_payload)
-        if decrypted_json is None:
-            logger.error("[数据采集层] 解密失败，丢弃数据包")
-            return
-
-        data = json.loads(decrypted_json)
-        sensor_data = data.get('data', {})
-
-        # 2. 提取核心数值
-        parsed_item = {
-            "timestamp": data.get('timestamp'),
-            "in_car_temp": sensor_data.get('in_car_temp', 0.0),
-            "out_car_temp": sensor_data.get('out_car_temp', 0.0),
-            "humidity": sensor_data.get('humidity', 0.0),
-            "pm25": sensor_data.get('pm25', 0.0),
-            "co2": sensor_data.get('co2', 0.0),
-            "status": data.get('status', 'NORMAL'),
-            "fault_code": data.get('fault_code', 'NONE'),
-            "latency_ms": int(time.time() * 1000 - data.get('send_time', time.time() * 1000))
-        }
-
-        # 3. 线程安全地更新内存数据池
-        with data_lock:
-            latest_sensor_data["raw_dict"] = data
-            latest_sensor_data.update(parsed_item)
-            data_queue.append(parsed_item)
-
-    except json.JSONDecodeError:
-        logger.error("[数据采集层] JSON解析失败")
-    except Exception as e:
-        logger.error(f"[数据采集层] 未知错误: {e}")
-
-
-def mqtt_thread_task():
-    global mqtt_client_instance
-    client = mqtt_client.Client(CLIENT_ID)
-    mqtt_client_instance = client
-    client.on_connect = on_connect
-    client.on_message = on_message
-    try:
-        client.connect(BROKER, PORT, 60)
-        client.loop_forever()
-    except Exception as e:
-        logger.error(f"[数据采集层] MQTT 线程异常退出: {e}")
-
-
-@app.on_event("startup")
-def startup_event():
-    logger.info("[系统启动] 正在初始化数据采集线程...")
-    thread = threading.Thread(target=mqtt_thread_task, daemon=True)
-    thread.start()
-
-
-# --- 临时调试接口 (用于验证第一步是否成功) ---
-@app.get("/api/debug/pool")
-def get_pool_status():
-    """查看内存数据池的实时状态"""
     with data_lock:
-        queue_len = len(data_queue)
-        # 取队列最后一条（最新）
-        latest_in_queue = data_queue[-1] if queue_len > 0 else None
+        nodes = []
+        for node_id, online_time in node_online_time.items():
+            latest = node_data_pool.get(node_id, {})
+            nodes.append({
+                "node_id":     node_id,
+                "online_time": online_time,
+                "status":      latest.get("status", "UNKNOWN"),
+                "is_abnormal": latest.get("is_abnormal", False),
+                "last_update": latest.get("timestamp"),
+            })
+    return {"nodes": nodes, "total": len(nodes)}
+
+
+@app.get("/api/nodes/{node_id}", summary="获取指定节点的最新数据")
+def get_node_detail(node_id: str):
+    """获取指定节点的最新传感器数据（明文，供前端实时显示）"""
+    with data_lock:
+        if node_id not in node_data_pool:
+            raise HTTPException(
+                status_code=404,
+                detail=f"节点 '{node_id}' 不存在或尚未上线"
+            )
+        latest = node_data_pool[node_id].copy()
+        queue  = list(node_queue_pool[node_id])
+
     return {
-        "queue_length": queue_len,
-        "max_queue_length": DATA_QUEUE_MAX_LEN,
-        "latest_data_snapshot": latest_sensor_data,
-        "latest_in_queue": latest_in_queue
+        "node_id":     node_id,
+        "online_time": node_online_time.get(node_id),
+        "latest_data": latest,
+        "queue_length":len(queue),
     }
 
-@app.get("/")
-def read_root():
-    return {"message": "台架测试系统 - 数据采集层运行中"}
+
+# ==========================================
+# API路由：实时数据
+# ==========================================
+@app.get("/api/debug/pool", summary="查看所有节点内存数据池状态")
+def get_pool_status():
+    """调试接口：查看多节点内存数据池（兼容旧版前端）"""
+    with data_lock:
+        result = {}
+        for node_id in node_data_pool:
+            queue = node_queue_pool[node_id]
+            result[node_id] = {
+                "latest_data_snapshot": node_data_pool[node_id].copy(),
+                "queue_length":         len(queue),
+            }
+    return result
 
 
-# --- 台架 API 接口改造 ---
-from typing import List, Dict # 确保导入了 List 和 Dict
+@app.get("/api/debug/pool/{node_id}", summary="查看指定节点内存数据池")
+def get_node_pool_status(node_id: str):
+    """查看指定节点的内存数据池状态"""
+    with data_lock:
+        if node_id not in node_data_pool:
+            raise HTTPException(status_code=404, detail=f"节点 '{node_id}' 不存在")
+        snapshot = node_data_pool[node_id].copy()
+        queue    = list(node_queue_pool[node_id])
+        latest   = queue[-1] if queue else None
+    return {
+        "node_id":              node_id,
+        "queue_length":         len(queue),
+        "max_queue_length":     DATA_QUEUE_MAX_LEN,
+        "latest_data_snapshot": snapshot,
+        "latest_in_queue":      latest,
+    }
 
 
-@app.post("/api/bench/run")
-def run_bench(req: List[Dict]):  # 直接声明接收一个字典列表
+# ==========================================
+# API路由：历史数据查询
+# ==========================================
+@app.get("/api/data/history", summary="历史传感器数据查询")
+def get_history(
+    node_id:     Optional[str] = Query(None,  description="节点ID筛选，为空则查全部"),
+    is_abnormal: Optional[bool] = Query(None, description="是否只看异常数据"),
+    limit:       int            = Query(50,   description="每页条数", ge=1, le=200),
+    offset:      int            = Query(0,    description="偏移量（分页用）", ge=0),
+    db:          Session        = Depends(get_db)
+):
     """
-    触发台架测试
-    前端直接发送 JSON 数组，例如:
-    [{"id": "case_temp_step", "params": {"target_temp": 90}}]
+    查询历史传感器数据
+    数值字段返回解密后的明文，方便前端直接展示
     """
+    query = db.query(SensorData)
+
+    # 筛选条件
+    if node_id:
+        query = query.filter(SensorData.sensor_id == node_id)
+    if is_abnormal is not None:
+        query = query.filter(SensorData.is_abnormal == is_abnormal)
+
+    total   = query.count()
+    records = (
+        query
+        .order_by(SensorData.server_time.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    # 解密数值字段后返回
+    result = []
+    for r in records:
+        item = r.to_dict()
+        # 解密数值字段（解密失败时返回None）
+        item["in_car_temp"]  = _safe_decrypt_float(r.in_car_temp)
+        item["out_car_temp"] = _safe_decrypt_float(r.out_car_temp)
+        item["humidity"]     = _safe_decrypt_float(r.humidity)
+        item["pm25"]         = _safe_decrypt_float(r.pm25)
+        item["co2"]          = _safe_decrypt_float(r.co2)
+        result.append(item)
+
+    return {
+        "total":  total,
+        "offset": offset,
+        "limit":  limit,
+        "data":   result,
+    }
+
+
+def _safe_decrypt_float(encrypted_str: Optional[str]) -> Optional[float]:
+    """安全解密数值字段，失败返回None"""
+    if not encrypted_str:
+        return None
+    try:
+        decrypted = decrypt_data(encrypted_str)
+        return float(decrypted) if decrypted else None
+    except (ValueError, TypeError):
+        return None
+
+
+# ==========================================
+# API路由：告警阈值配置
+# ==========================================
+@app.get("/api/config/thresholds", summary="获取当前告警阈值")
+def get_thresholds():
+    """获取当前生效的告警阈值配置"""
+    with config_lock:
+        return {"config": current_test_config.copy()}
+
+
+@app.put("/api/config/thresholds", summary="更新告警阈值")
+def update_thresholds(new_config: Dict[str, float]):
+    """
+    动态更新告警阈值，立即生效，无需重启
+    只更新传入的字段，未传入的字段保持不变
+    """
+    global current_test_config
+    with config_lock:
+        current_test_config.update(new_config)
+        updated = current_test_config.copy()
+    logger.info(f"[配置] 告警阈值已更新: {new_config}")
+    return {"message": "阈值更新成功", "config": updated}
+
+
+# ==========================================
+# API路由：台架测试
+# ==========================================
+@app.post("/api/bench/run", summary="启动台架测试")
+def run_bench(
+    req:     List[Dict],
+    node_id: str = Query("ENV_SIM_001", description="指定测试目标节点")
+):
+    """
+    启动台架自动化测试
+    req格式：[{"id": "case_temp_step", "params": {"target_temp": 80}}]
+    node_id：指定本次测试针对哪个节点（默认模拟器节点）
+    """
+    executor = app.state.executor
     if not req:
-        return {"message": "提交的用例列表为空", "status": "error"}
+        raise HTTPException(status_code=400, detail="用例列表为空")
 
-    # req 本身就是那个列表，直接扔给执行器
-    success = bench_executor.start(config=req)
+    success = executor.start(config=req, node_id=node_id)
     if success:
-        return {"message": f"已下发 {len(req)} 个用例至台架", "status": "success"}
-    else:
-        return {"message": "台架正在运行中，请勿重复提交", "status": "error"}
+        return {
+            "message": f"已启动 {len(req)} 个用例，目标节点: {node_id}",
+            "status":  "success"
+        }
+    return {
+        "message": "台架正在运行中，请勿重复提交",
+        "status":  "error"
+    }
 
-# 获取元数据接口（替代之前的 debug 接口，正式提供给前端拉取用例列表）
-@app.get("/api/bench/cases")
+
+@app.post("/api/bench/stop", summary="强制停止台架测试")
+def stop_bench():
+    """强制停止正在运行的测试，当前用例执行完毕后停止"""
+    executor = app.state.executor
+    if not executor.is_running:
+        return {"message": "台架当前未在运行", "status": "idle"}
+    executor.stop()
+    return {"message": "已发送停止信号，当前用例执行完毕后停止", "status": "stopping"}
+
+
+@app.get("/api/bench/cases", summary="获取所有可用测试用例")
 def get_available_cases():
-    """获取所有可用的测试用例及其默认参数"""
-    registry = bench_executor.registry
-    # 将内部执行器函数剥离，只把元数据返回给前端
-    safe_metadata = []
-    for case_id, meta in registry.items():
-        safe_metadata.append({
-            "id": case_id,
-            "name": meta["name"],
-            "type": meta["type"],
-            "default_params": meta["default_params"]
-        })
+    """获取注册中心中所有可用的测试用例及其默认参数"""
+    executor = app.state.executor
+    safe_metadata = [
+        {
+            "id":             case_id,
+            "name":           meta["name"],
+            "type":           meta["type"],
+            "default_params": meta["default_params"],
+        }
+        for case_id, meta in executor.registry.items()
+    ]
     return {"cases": safe_metadata}
 
 
-@app.get("/api/bench/status")
+@app.get("/api/bench/status", summary="获取台架运行状态")
 def get_bench_status():
+    """获取台架当前运行状态、进度和结果摘要"""
+    executor = app.state.executor
     return {
-        "is_running": bench_executor.is_running,
-        "current_case": bench_executor.current_case_name,
-        "progress": f"{bench_executor.progress}/{bench_executor.total_cases}",
-        "results_summary": [{"case": r["case"], "status": r["status"]} for r in bench_executor.results]
+        "is_running":       executor.is_running,
+        "current_case":     executor.current_case_name,
+        "target_node":      getattr(executor, 'target_node_id', 'N/A'),
+        "progress":         f"{executor.progress}/{executor.total_cases}",
+        "results_summary":  [
+            {"case_id": r.get("case_id"), "case": r["case"], "status": r["status"]}
+            for r in executor.results
+        ],
     }
 
 
-@app.get("/api/bench/logs")
+@app.get("/api/bench/logs", summary="获取台架执行日志")
 def get_bench_logs():
-    return {"logs": bench_executor.logs[-50:]}
+    """获取最近50条台架执行日志"""
+    executor = app.state.executor
+    logs = list(executor.logs)
+    return {"logs": logs[-50:]}
 
 
-@app.get("/api/bench/report")
+@app.get("/api/bench/report", summary="获取本次测试报告")
 def get_bench_report():
-    if bench_executor.is_running:
-        return {"message": "测试尚未结束", "status": "error"}
+    """获取本次测试的完整报告（测试结束后可用）"""
+    executor = app.state.executor
+    if executor.is_running:
+        raise HTTPException(status_code=400, detail="测试尚未结束")
+    if not executor.results:
+        raise HTTPException(status_code=404, detail="暂无测试结果")
+
+    pass_count  = sum(1 for r in executor.results if r["status"] == "PASS")
+    fail_count  = sum(1 for r in executor.results if r["status"] == "FAIL")
+    error_count = sum(1 for r in executor.results if r["status"] == "ERROR")
+    total       = len(executor.results)
+
     return {
-        "status": "success",
-        "total": bench_executor.total_cases,
-        "pass_count": sum(1 for r in bench_executor.results if r["status"] == "PASS"),
-        "fail_count": sum(1 for r in bench_executor.results if r["status"] == "FAIL"),
-        "details": bench_executor.results
+        "status":      "success",
+        "target_node": getattr(executor, 'target_node_id', 'N/A'),
+        "total":       total,
+        "pass_count":  pass_count,
+        "fail_count":  fail_count,
+        "error_count": error_count,
+        "pass_rate":   round(pass_count / total * 100, 1) if total > 0 else 0,
+        "details":     executor.results,
     }
 
 
-# --- 自定义用例 CRUD API ---
-import uuid as uuid_lib
-from pydantic import BaseModel
+# ==========================================
+# API路由：测试报告持久化
+# ==========================================
+@app.post("/api/reports/save", summary="保存测试报告到数据库")
+def save_report(db: Session = Depends(get_db)):
+    """
+    将本次测试结果保存到数据库
+    建议在前端确认报告后调用
+    """
+    executor = app.state.executor
+    if executor.is_running:
+        raise HTTPException(status_code=400, detail="测试尚未结束，无法保存")
+    if not executor.results:
+        raise HTTPException(status_code=404, detail="暂无测试结果可保存")
 
+    results     = executor.results
+    total       = len(results)
+    pass_count  = sum(1 for r in results if r["status"] == "PASS")
+    fail_count  = sum(1 for r in results if r["status"] == "FAIL")
+    error_count = sum(1 for r in results if r["status"] == "ERROR")
+    node_id     = getattr(executor, 'target_node_id', 'UNKNOWN')
 
-# 自定义用例的请求体格式
-class CustomCasePayload(BaseModel):
-    name: str
-    steps: list
+    report = TestReport(
+        report_name = f"{datetime.now().strftime('%Y-%m-%d %H:%M')} [{node_id}] 测试报告",
+        node_id     = node_id,
+        total_cases = total,
+        pass_count  = pass_count,
+        fail_count  = fail_count,
+        error_count = error_count,
+        pass_rate   = pass_count / total if total > 0 else 0.0,
+        details     = json.dumps(results, ensure_ascii=False),
+        create_time = datetime.utcnow(),
+    )
 
+    db.add(report)
+    db.commit()
+    db.refresh(report)
 
-CUSTOM_CASES_FILE = "custom_cases.json"
-
-
-@app.get("/api/bench/custom_cases")
-def get_custom_cases():
-    """获取所有已保存的自定义用例"""
-    try:
-        with open(CUSTOM_CASES_FILE, 'r', encoding='utf-8') as f:
-            return {"cases": json.load(f)}
-    except:
-        return {"cases": []}
-
-
-@app.post("/api/bench/custom_cases")
-def save_custom_case(case: CustomCasePayload):
-    """保存一个新的自定义用例"""
-    try:
-        with open(CUSTOM_CASES_FILE, 'r', encoding='utf-8') as f:
-            cases = json.load(f)
-    except:
-        cases = []
-
-    # 生成唯一 ID
-    new_id = f"custom_{uuid_lib.uuid4().hex[:8]}"
-    new_case = {
-        "id": new_id,
-        "name": case.name,
-        "steps": case.steps
+    logger.info(f"[报告] 已保存测试报告 id={report.id}，节点={node_id}")
+    return {
+        "message":   "报告保存成功",
+        "report_id": report.id,
+        "report":    report.to_dict(),
     }
 
-    cases.append(new_case)
 
-    with open(CUSTOM_CASES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(cases, f, ensure_ascii=False, indent=4)
+@app.get("/api/reports/list", summary="获取历史测试报告列表")
+def get_reports_list(
+    node_id: Optional[str] = Query(None, description="按节点筛选"),
+    limit:   int           = Query(20,   description="每页条数", ge=1, le=100),
+    offset:  int           = Query(0,    description="偏移量", ge=0),
+    db:      Session       = Depends(get_db)
+):
+    """获取历史测试报告列表（分页）"""
+    query = db.query(TestReport)
+    if node_id:
+        query = query.filter(TestReport.node_id == node_id)
 
-    # 通知执行器刷新内存
-    bench_executor.reload_registry()
+    total   = query.count()
+    reports = (
+        query
+        .order_by(TestReport.create_time.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return {
+        "total":   total,
+        "offset":  offset,
+        "limit":   limit,
+        "reports": [r.to_dict() for r in reports],
+    }
 
-    return {"message": "用例保存成功", "id": new_id}
+
+@app.get("/api/reports/{report_id}", summary="获取指定报告详情")
+def get_report_detail(report_id: int, db: Session = Depends(get_db)):
+    """获取指定报告的完整详情，包含每个用例的结果"""
+    report = db.query(TestReport).filter(TestReport.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail=f"报告 id={report_id} 不存在")
+    return {"report": report.to_detail_dict()}
 
 
-@app.delete("/api/bench/custom_cases/{case_id}")
-def delete_custom_case(case_id: str):
-    """删除指定的自定义用例"""
-    try:
-        with open(CUSTOM_CASES_FILE, 'r', encoding='utf-8') as f:
-            cases = json.load(f)
-    except:
-        return {"message": "文件不存在或为空", "status": "error"}
-
-    original_len = len(cases)
-    # 过滤掉目标 ID
-    cases = [c for c in cases if c.get("id") != case_id]
-
-    if len(cases) == original_len:
-        return {"message": "未找到该用例", "status": "error"}
-
-    with open(CUSTOM_CASES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(cases, f, ensure_ascii=False, indent=4)
-
-    # 通知执行器刷新内存
-    bench_executor.reload_registry()
-
-    return {"message": "删除成功", "status": "success"}
+# ==========================================
+# 根路由
+# ==========================================
+@app.get("/", summary="服务状态")
+def read_root():
+    return {
+        "message": "车载环境传感器测试系统 v2.0",
+        "status":  "running",
+        "docs":    "/docs",    # FastAPI自动生成的API文档
+    }
