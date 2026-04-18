@@ -3,6 +3,7 @@
 import os
 import logging
 from typing import Generator
+import models
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -132,10 +133,7 @@ def init_db():
         from database import init_db
         init_db()
     """
-    # 这里的import必须保留
-    # 触发models.py执行，让所有Model类注册到Base.metadata
-    import models  # noqa: F401
-
+    # 检查是否已经在导入models（避免循环导入）
     Base.metadata.create_all(bind=engine)
     logger.info("[数据库] 数据表初始化完成")
 
