@@ -13,7 +13,6 @@ from typing import List, Dict, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from paho.mqtt import client as mqtt_client
 from sqlalchemy.orm import Session
 
@@ -22,7 +21,6 @@ from sqlalchemy.orm import Session
 # 顺序很重要：database → models → 其他
 # =========================================
 from database import get_db, init_db, SessionLocal
-import models
 from models import SensorData, TestReport
 from crypto_utils import decrypt_data, encrypt_data
 from test_engine import run_content_test, get_default_config

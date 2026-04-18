@@ -1,14 +1,13 @@
 # backend/test_bench.py
 
 import time
-import json
 import logging
 import threading
 from collections import deque
 from datetime import datetime
 from typing import Callable, Optional
 
-from crypto_utils import decrypt_data
+from backend.crypto_utils import decrypt_data
 
 logger = logging.getLogger("TestBenchExecutor")
 
