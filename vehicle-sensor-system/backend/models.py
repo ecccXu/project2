@@ -205,7 +205,6 @@ if __name__ == "__main__":
     import sys
     import os
 
-    # Windows路径兼容：确保能找到database.py
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
     logging.basicConfig(level=logging.INFO)
@@ -215,16 +214,19 @@ if __name__ == "__main__":
     print("Windows环境")
     print("=" * 50)
 
-    from database import engine, init_db
+    # ✅ 关键修复：
+    # 直接从database导入engine和Base，
+    # 此时models.py已经在执行中，SensorData和TestReport
+    # 已经注册到Base.metadata，不需要再import models
+    from database import engine, Base, SessionLocal, init_db
 
     # 测试1：建表
     print("\n【测试1】建表")
-    init_db()
+    init_db()   # 此时Base.metadata已有表信息，直接建表
     print("✅ 建表成功")
 
     # 测试2：写入SensorData
     print("\n【测试2】写入SensorData")
-    from database import SessionLocal
     db = SessionLocal()
     try:
         record = SensorData(
