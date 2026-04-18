@@ -3,7 +3,6 @@
 import os
 import logging
 from typing import Generator
-import models
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
