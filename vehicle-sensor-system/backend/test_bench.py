@@ -7,7 +7,7 @@ from collections import deque
 from datetime import datetime
 from typing import Callable, Optional
 
-from backend.crypto_utils import decrypt_data
+from crypto_utils import decrypt_data
 
 logger = logging.getLogger("TestBenchExecutor")
 

@@ -160,7 +160,6 @@ class CarEnvironmentSimulator:
         except Exception as e:
             print(f"[ERROR] 发生严重错误: {e}")
 
-
 if __name__ == "__main__":
     simulator = CarEnvironmentSimulator(SENSOR_ID)
     simulator.run()
