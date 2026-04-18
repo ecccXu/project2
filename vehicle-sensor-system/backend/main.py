@@ -282,31 +282,43 @@ def mqtt_thread_task():
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    应用生命周期管理
-    替代已废弃的 @app.on_event("startup")
-    """
-    # 启动阶段
-    logger.info("[系统启动] 正在初始化...")
-
-    # 1. 初始化数据库（建表）
     init_db()
 
-    # 2. 延迟导入 test_bench（解决循环导入）
-    #    此时 main.py 已完全加载，test_bench 可以安全导入
     from test_bench import executor as _executor
-    app.state.executor = _executor
-    logger.info("[系统启动] 测试引擎初始化完成")
 
-    # 3. 启动MQTT后台线程
+    # ✅ 注入三个依赖函数
+    def _data_provider(node_id: str) -> dict:
+        with data_lock:
+            return node_data_pool.get(node_id, {}).copy()
+
+    def _queue_provider(node_id: str, count: int) -> list:
+        with data_lock:
+            q = node_queue_pool.get(node_id, deque())
+            lst = list(q)
+            return lst[-count:] if len(lst) >= count else lst
+
+    def _mqtt_publisher(node_id: str, command: str, params: dict) -> bool:
+        if not mqtt_client_instance:
+            return False
+        topic   = f"vcar/sensors/{node_id}/control"
+        payload = json.dumps({"command": command, "params": params})
+        mqtt_client_instance.publish(topic, payload, qos=1)
+        return True
+
+    _executor.inject_dependencies(
+        data_provider  = _data_provider,
+        queue_provider = _queue_provider,
+        mqtt_publisher = _mqtt_publisher,
+    )
+
+    app.state.executor = _executor
+    logger.info("[系统启动] 测试引擎依赖注入完成")
+
     thread = threading.Thread(target=mqtt_thread_task, daemon=True)
     thread.start()
-    logger.info("[系统启动] MQTT数据采集线程已启动")
-
-    logger.info("[系统启动] 全部初始化完成，服务就绪 ✅")
+    logger.info("[系统启动] 全部初始化完成 ✅")
     yield
 
-    # 关闭阶段
     logger.info("[系统关闭] 正在清理资源...")
     if mqtt_client_instance:
         mqtt_client_instance.disconnect()
