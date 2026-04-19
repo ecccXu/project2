@@ -1,472 +1,1275 @@
-<!-- src/App.vue -->
+<!-- frontend/src/App.vue -->
 <script setup>
-import { Top, Bottom, Delete } from '@element-plus/icons-vue'
-import { ElMessageBox, ElMessage } from 'element-plus'
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import axios from 'axios'
 import * as echarts from 'echarts'
 
 const API_BASE = 'http://127.0.0.1:8000'
 
-// --- 状态定义 ---
-const benchStatus = ref({ is_running: false, current_case: '等待启动', progress: '0/0', results_summary: [] })
-const terminalLogs = ref([])
-const realtimePool = ref({ latest_data_snapshot: {} })
-const reportVisible = ref(false)
-const reportData = ref(null)
-const reportChartInstance = ref(null)
+// ==========================================
+// 全局状态
+// ==========================================
+const activeTab       = ref('monitor')   // 当前激活的Tab
+const availableNodes  = ref([])          // 在线节点列表
+const selectedNode    = ref('')          // 当前选中的节点ID
 
-let statusTimer = null
-let poolTimer = null
-const terminalRef = ref(null)
+// ==========================================
+// Tab1：实时监控
+// ==========================================
+const monitorData    = ref({})    // 当前节点最新数据
+const isAbnormal     = ref(false) // 是否有告警
+const abnormalMsg    = ref('')    // 告警信息
+let   monitorTimer   = null
 
-// --- 用例编排状态 ---
-const caseTemplates = ref([])
-const selectedCaseIds = ref([])
-const drawerVisible = ref(false)
-const editingCase = ref(null)
-const editingParams = ref({})
-
-// --- 积木搭建器状态 (新增) ---
-const builderVisible = ref(false)
-const builderName = ref('新建自定义用例')
-const builderSteps = ref([]) // 存放用户编排的步骤数组
-
-// 积木工具箱定义（前端写死的元数据）
-const blockToolbox = [
-  { category: '动作积木', blocks: [
-    { action: 'OVERRIDE_VALUE', name: '强制赋值', params: [{key: 'target', type: 'select', options: ['in_car_temp', 'out_car_temp', 'humidity', 'pm25', 'co2']}, {key: 'value', type: 'number'}] },
-    { action: 'SET_SCENARIO', name: '切换工况', params: [{key: 'scenario_name', type: 'select', options: ['static_parking_summer', 'winter_cruising', 'tunnel_following', 'highway_ac_leak']}] },
-    { action: 'INJECT_FAULT', name: '注入故障', params: [{key: 'target', type: 'select', options: ['in_car_temp', 'pm25', 'co2']}, {key: 'fault_type', type: 'select', options: ['STUCK', 'OPEN_CIRCUIT', 'SHORT_CIRCUIT']}, {key: 'stuck_value', type: 'number', hidden: true}] },
-    { action: 'CLEAR_FAULT', name: '清除故障', params: [] },
-    { action: 'WAIT', name: '等待(秒)', params: [{key: 'seconds', type: 'number'}] }
-  ]},
-  { category: '断言积木', blocks: [
-    { action: 'ASSERT_VALUE', name: '数值比对', type: 'assertion', params: [{key: 'target', type: 'select', options: ['in_car_temp', 'out_car_temp', 'humidity', 'pm25', 'co2']}, {key: 'operator', type: 'select', options: ['>', '<', '==', '!=', '>=', '<=']}, {key: 'expected_value', type: 'number'}] },
-    { action: 'ASSERT_STATUS', name: '状态判定', type: 'assertion', params: [{key: 'expected_status', type: 'select', options: ['NORMAL', 'FAULT']}] },
-    { action: 'ASSERT_FAULT_CODE', name: '故障码判定', type: 'assertion', params: [{key: 'expected_code', type: 'text'}] }
-  ]}
-]
-
-// --- 核心动作 ---
-const startBench = async () => {
-  if (selectedCaseIds.value.length === 0) return alert('请至少勾选一个测试用例！')
-  terminalLogs.value = []
-  benchStatus.value = { is_running: true, current_case: '系统初始化...', progress: '0/0', results_summary: [] }
-  reportVisible.value = false
-  const payload = selectedCaseIds.value.map(caseId => {
-    const template = caseTemplates.value.find(c => c.id === caseId)
-    return { id: caseId, params: template ? template.current_params : {} }
-  })
-  await axios.post(`${API_BASE}/api/bench/run`, payload)
-  startPolling()
-}
-
-const fetchCases = async () => {
-  const res = await axios.get(`${API_BASE}/api/bench/cases`)
-  if (res.data && res.data.cases) {
-    caseTemplates.value = res.data.cases.map(c => ({ ...c, current_params: { ...c.default_params } }))
+const fetchMonitorData = async () => {
+  if (!selectedNode.value) return
+  try {
+    const res = await axios.get(`${API_BASE}/api/nodes/${selectedNode.value}`)
+    monitorData.value = res.data.latest_data || {}
+    isAbnormal.value  = monitorData.value.is_abnormal || false
+    abnormalMsg.value = monitorData.value.error_msg   || ''
+  } catch (e) {
+    console.error('监控数据获取失败', e)
   }
 }
 
+// ==========================================
+// Tab2：测试执行
+// ==========================================
+// 用例编排
+const caseTemplates    = ref([])
+const selectedCaseIds  = ref([])
+const drawerVisible    = ref(false)
+const editingCase      = ref(null)
+const editingParams    = ref({})
+const benchNode        = ref('')     // 测试目标节点
+
+// 运行状态
+const benchStatus = ref({
+  is_running:       false,
+  current_case:     '等待启动',
+  progress:         '0/0',
+  results_summary:  [],
+})
+const terminalLogs     = ref([])
+const terminalRef      = ref(null)
+const reportVisible    = ref(false)
+const reportData       = ref(null)
+const reportChartRef   = ref(null)
+const reportChartInst  = ref(null)
+let   statusTimer      = null
+
+// 用例列表获取
+const fetchCases = async () => {
+  try {
+    const res = await axios.get(`${API_BASE}/api/bench/cases`)
+    if (res.data?.cases) {
+      caseTemplates.value = res.data.cases.map(c => ({
+        ...c,
+        current_params: { ...c.default_params },
+      }))
+    }
+  } catch (e) {
+    console.error('获取用例列表失败', e)
+  }
+}
+
+// 点击用例名称，打开参数编辑抽屉
 const handleCaseClick = (caseItem) => {
-  editingCase.value = caseItem
+  editingCase.value   = caseItem
   editingParams.value = { ...caseItem.current_params }
   drawerVisible.value = true
 }
+
+// 保存参数（修复类型丢失问题）
 const saveParams = () => {
-  if (editingCase.value) editingCase.value.current_params = { ...editingParams.value }
+  if (editingCase.value) {
+    const converted = {}
+    for (const [key, val] of Object.entries(editingParams.value)) {
+      // el-input返回字符串，尝试转为数字
+      const num = Number(val)
+      converted[key] = (!isNaN(num) && val !== '') ? num : val
+    }
+    editingCase.value.current_params = converted
+  }
   drawerVisible.value = false
 }
 
-// --- 积木搭建器逻辑 (新增) ---
-const openBuilder = () => {
-  builderName.value = '新建自定义用例'
-  builderSteps.value = []
-  builderVisible.value = true
-}
-
-const addBlock = (block) => {
-  // 深拷贝积木模板，初始化参数值
-  const newStep = {
-    type: block.type || 'action',
-    action: block.action,
-    params: {}
+// 启动测试
+const startBench = async () => {
+  if (selectedCaseIds.value.length === 0) {
+    ElMessage.warning('请至少勾选一个测试用例！')
+    return
   }
-  block.params.forEach(p => {
-    newStep.params[p.key] = p.type === 'number' ? 0 : (p.options ? p.options[0] : '')
+  if (!benchNode.value) {
+    ElMessage.warning('请选择测试目标节点！')
+    return
+  }
+
+  terminalLogs.value = []
+  reportVisible.value = false
+  benchStatus.value = {
+    is_running:      true,
+    current_case:    '系统初始化...',
+    progress:        '0/0',
+    results_summary: [],
+  }
+
+  const payload = selectedCaseIds.value.map(caseId => {
+    const template = caseTemplates.value.find(c => c.id === caseId)
+    return {
+      id:     caseId,
+      params: template ? { ...template.current_params } : {},
+    }
   })
-  builderSteps.value.push(newStep)
-}
 
-const removeStep = (index) => {
-  builderSteps.value.splice(index, 1)
-}
-
-const moveStep = (index, direction) => {
-  const newIndex = index + direction
-  if (newIndex < 0 || newIndex >= builderSteps.value.length) return
-  const temp = builderSteps.value[index]
-  builderSteps.value[index] = builderSteps.value[newIndex]
-  builderSteps.value[newIndex] = temp
-  // 触发响应式更新
-  builderSteps.value = [...builderSteps.value]
-}
-
-const saveBuilderCase = async () => {
-  if (builderSteps.value.length === 0) return alert('请至少添加一个积木步骤！')
   try {
-    const payload = {
-      name: builderName.value,
-      steps: builderSteps.value
+    const res = await axios.post(
+      `${API_BASE}/api/bench/run?node_id=${benchNode.value}`,
+      payload
+    )
+    if (res.data.status === 'error') {
+      ElMessage.error(`启动失败：${res.data.message}`)
+      benchStatus.value.is_running = false
+      return
     }
-    const res = await axios.post(`${API_BASE}/api/bench/custom_cases`, payload)
-    if (res.data && res.data.id) {
-      alert('用例保存成功！已添加到左侧列表。')
-      builderVisible.value = false
-      fetchCases() // 刷新左侧列表
-    }
+    ElMessage.success(res.data.message)
+    startPolling()
   } catch (e) {
-    alert('保存失败：' + e.response.data.detail)
+    ElMessage.error('请求失败，请检查后端是否运行')
+    benchStatus.value.is_running = false
   }
 }
 
-const deleteCustomCase = async (caseId) => {
+// 强制停止测试
+const stopBench = async () => {
   try {
-    // 弹出二次确认框
-    await ElMessageBox.confirm('确定要删除此自定义用例吗？此操作不可恢复。', '警告', {
-      confirmButtonText: '确定删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-      customStyle: { backgroundColor: '#2d2d30', borderColor: '#3e3e42', color: '#d4d4d4' }, // 适配暗色主题
-      confirmButtonClass: 'el-button--danger'
-    })
-
-    // 确认后调用接口
-    const res = await axios.delete(`${API_BASE}/api/bench/custom_cases/${caseId}`)
-    if (res.data && res.data.status === 'success') {
-      ElMessage.success('用例已删除')
-      fetchCases() // 刷新左侧列表
-    } else {
-      ElMessage.error(res.data.message || '删除失败')
-    }
+    const res = await axios.post(`${API_BASE}/api/bench/stop`)
+    ElMessage.warning(res.data.message)
   } catch (e) {
-    // 用户点了取消，什么都不做
-    if (e !== 'cancel') {
-      console.error('删除异常', e)
-    }
+    ElMessage.error('停止请求失败')
   }
 }
 
-// --- 轮询与报告逻辑 ---
+// 轮询状态和日志
 const startPolling = () => {
   stopPolling()
+  let errorCount = 0
   statusTimer = setInterval(async () => {
     try {
-      const statusRes = await axios.get(`${API_BASE}/api/bench/status`)
-      benchStatus.value = statusRes.data
-      const logRes = await axios.get(`${API_BASE}/api/bench/logs`)
-      terminalLogs.value = logRes.data.logs
+      const [statusRes, logRes] = await Promise.all([
+        axios.get(`${API_BASE}/api/bench/status`),
+        axios.get(`${API_BASE}/api/bench/logs`),
+      ])
+      benchStatus.value  = statusRes.data
+      terminalLogs.value = logRes.data.logs || []
+      errorCount = 0
+
       await nextTick()
-      if (terminalRef.value) terminalRef.value.scrollTop = terminalRef.value.scrollHeight
-      if (!benchStatus.value.is_running && benchStatus.value.results_summary.length > 0) {
+      if (terminalRef.value) {
+        terminalRef.value.scrollTop = terminalRef.value.scrollHeight
+      }
+
+      // 测试结束自动获取报告
+      if (
+        !benchStatus.value.is_running &&
+        benchStatus.value.results_summary.length > 0
+      ) {
         stopPolling()
         fetchFinalReport()
       }
-    } catch (e) { console.error('轮询错误', e) }
+    } catch (e) {
+      errorCount++
+      if (errorCount > 5) {
+        stopPolling()
+        ElMessage.error('与后端失去连接，请检查服务是否运行')
+      }
+    }
   }, 800)
 }
-const stopPolling = () => { if (statusTimer) clearInterval(statusTimer); statusTimer = null }
 
+const stopPolling = () => {
+  if (statusTimer) clearInterval(statusTimer)
+  statusTimer = null
+}
+
+// 获取测试报告
 const fetchFinalReport = async () => {
   try {
     const res = await axios.get(`${API_BASE}/api/bench/report`)
     if (res.data.status === 'success') {
-      reportData.value = res.data
+      reportData.value    = res.data
       reportVisible.value = true
-      nextTick(() => initReportChart())
+      await nextTick()
+      initReportChart()
     }
-  } catch (e) { console.error('获取报告失败', e) }
+  } catch (e) {
+    console.error('获取报告失败', e)
+  }
 }
 
-const fetchPoolData = () => {
-  axios.get(`${API_BASE}/api/debug/pool`).then(res => { realtimePool.value = res.data }).catch(() => {})
+// 保存报告到数据库
+const saveReport = async () => {
+  try {
+    const res = await axios.post(`${API_BASE}/api/reports/save`)
+    ElMessage.success(`报告已保存，ID: ${res.data.report_id}`)
+  } catch (e) {
+    ElMessage.error('保存失败，请确认测试已结束')
+  }
 }
 
+// 初始化报告饼图
 const initReportChart = () => {
   if (!reportData.value) return
-  const dom = document.getElementById('reportPieChart')
+  const dom = reportChartRef.value
   if (!dom) return
-  if (reportChartInstance.value) reportChartInstance.value.dispose()
-  reportChartInstance.value = echarts.init(dom)
-  reportChartInstance.value.setOption({
+  if (reportChartInst.value) reportChartInst.value.dispose()
+  reportChartInst.value = echarts.init(dom)
+  reportChartInst.value.setOption({
     tooltip: { trigger: 'item' },
-    series: [{ type: 'pie', radius: ['40%', '70%'], avoidLabelOverlap: false, itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 }, label: { show: true, fontSize: 16, fontWeight: 'bold', formatter: '{b}\n{d}%' }, data: [{ value: reportData.value.pass_count, name: '通过', itemStyle: { color: '#67C23A' } }, { value: reportData.value.fail_count, name: '失败', itemStyle: { color: '#F56C6C' } }] }]
+    series: [{
+      type:      'pie',
+      radius:    ['40%', '70%'],
+      itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+      label: {
+        show:      true,
+        fontSize:  14,
+        formatter: '{b}\n{d}%',
+      },
+      data: [
+        {
+          value:     reportData.value.pass_count,
+          name:      '通过',
+          itemStyle: { color: '#67C23A' },
+        },
+        {
+          value:     reportData.value.fail_count,
+          name:      '失败',
+          itemStyle: { color: '#F56C6C' },
+        },
+        {
+          value:     reportData.value.error_count || 0,
+          name:      '错误',
+          itemStyle: { color: '#E6A23C' },
+        },
+      ],
+    }],
   })
 }
 
+// 用例状态（精确匹配case_id，修复旧版模糊匹配问题）
 const getCaseStatus = (caseId) => {
-  const found = benchStatus.value.results_summary.find(r => r.case.includes(caseId))
+  const found = benchStatus.value.results_summary.find(
+    r => r.case_id === caseId   // ✅ 精确匹配
+  )
   if (!found) {
-    if (benchStatus.value.current_case.includes(caseId)) return 'RUNNING'
+    if (benchStatus.value.current_case?.includes(caseId)) return 'RUNNING'
     return 'PENDING'
   }
   return found.status
 }
 
-onMounted(() => {
-  fetchCases()
-  fetchPoolData()
-  poolTimer = setInterval(fetchPoolData, 1500)
-})
-onUnmounted(() => {
-  stopPolling()
-  if (poolTimer) clearInterval(poolTimer)
-  if (reportChartInstance.value) reportChartInstance.value.dispose()
-})
-// --- 辅助函数 (从 methods 迁移至此以解决渲染问题) ---
-const getBlockParams = (action) => {
-  for (const cat of blockToolbox) {
-    for (const block of cat.blocks) {
-      if (block.action === action) return block.params
-    }
-  }
-  return []
+// 日志格式化（移入script setup，解决混用API问题）
+const formatLog = (log) => {
+  // 先转义HTML，防止XSS
+  const escaped = log
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  if (escaped.includes('FAIL') || escaped.includes('错误') || escaped.includes('异常'))
+    return `<span style="color:#F56C6C;">${escaped}</span>`
+  if (escaped.includes('PASS') || escaped.includes('成功') || escaped.includes('有效') || escaped.includes('拦截'))
+    return `<span style="color:#67C23A;">${escaped}</span>`
+  if (escaped.includes('-> 下发指令'))
+    return `<span style="color:#409EFF;">${escaped}</span>`
+  if (escaped.includes('警告') || escaped.includes('INTERRUPTED'))
+    return `<span style="color:#E6A23C;">${escaped}</span>`
+  return escaped
 }
 
-const formatLog = (log) => {
-  if (log.includes('FAIL') || log.includes('错误') || log.includes('异常')) return `<span style="color: #F56C6C;">${log}</span>`
-  if (log.includes('PASS') || log.includes('成功') || log.includes('有效')) return `<span style="color: #67C23A;">${log}</span>`
-  if (log.includes('-> 下发指令')) return `<span style="color: #409EFF;">${log}</span>`
-  if (log.includes('[步骤')) return `<span style="color: #e5c07b;">${log}</span>`
-  return log
+// ==========================================
+// Tab3：历史数据
+// ==========================================
+const historyNode      = ref('')
+const historyAbnormal  = ref(null)     // null=全部 true=仅异常
+const historyData      = ref([])
+const historyTotal     = ref(0)
+const historyPage      = ref(1)
+const historyPageSize  = ref(20)
+const historyLoading   = ref(false)
+
+const fetchHistory = async () => {
+  historyLoading.value = true
+  try {
+    const params = {
+      limit:  historyPageSize.value,
+      offset: (historyPage.value - 1) * historyPageSize.value,
+    }
+    if (historyNode.value)           params.node_id     = historyNode.value
+    if (historyAbnormal.value !== null) params.is_abnormal = historyAbnormal.value
+
+    const res     = await axios.get(`${API_BASE}/api/data/history`, { params })
+    historyData.value  = res.data.data  || []
+    historyTotal.value = res.data.total || 0
+  } catch (e) {
+    ElMessage.error('历史数据获取失败')
+  } finally {
+    historyLoading.value = false
+  }
 }
+
+const handleHistoryPageChange = (page) => {
+  historyPage.value = page
+  fetchHistory()
+}
+
+const resetHistory = () => {
+  historyNode.value     = ''
+  historyAbnormal.value = null
+  historyPage.value     = 1
+  fetchHistory()
+}
+
+// ==========================================
+// Tab4：历史报告
+// ==========================================
+const reportListNode     = ref('')
+const reportList         = ref([])
+const reportListTotal    = ref(0)
+const reportListPage     = ref(1)
+const reportListLoading  = ref(false)
+const detailVisible      = ref(false)
+const detailReport       = ref(null)
+const detailChartRef     = ref(null)
+const detailChartInst    = ref(null)
+
+const fetchReportList = async () => {
+  reportListLoading.value = true
+  try {
+    const params = {
+      limit:  10,
+      offset: (reportListPage.value - 1) * 10,
+    }
+    if (reportListNode.value) params.node_id = reportListNode.value
+
+    const res          = await axios.get(`${API_BASE}/api/reports/list`, { params })
+    reportList.value      = res.data.reports || []
+    reportListTotal.value = res.data.total   || 0
+  } catch (e) {
+    ElMessage.error('报告列表获取失败')
+  } finally {
+    reportListLoading.value = false
+  }
+}
+
+const viewReportDetail = async (reportId) => {
+  try {
+    const res        = await axios.get(`${API_BASE}/api/reports/${reportId}`)
+    detailReport.value  = res.data.report
+    detailVisible.value = true
+    await nextTick()
+    initDetailChart()
+  } catch (e) {
+    ElMessage.error('报告详情获取失败')
+  }
+}
+
+const initDetailChart = () => {
+  if (!detailReport.value) return
+  const dom = detailChartRef.value
+  if (!dom) return
+  if (detailChartInst.value) detailChartInst.value.dispose()
+  detailChartInst.value = echarts.init(dom)
+  detailChartInst.value.setOption({
+    tooltip: { trigger: 'item' },
+    series: [{
+      type:      'pie',
+      radius:    ['40%', '70%'],
+      itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+      label: { show: true, fontSize: 13, formatter: '{b}\n{d}%' },
+      data: [
+        {
+          value:     detailReport.value.pass_count,
+          name:      '通过',
+          itemStyle: { color: '#67C23A' },
+        },
+        {
+          value:     detailReport.value.fail_count,
+          name:      '失败',
+          itemStyle: { color: '#F56C6C' },
+        },
+        {
+          value:     detailReport.value.error_count || 0,
+          name:      '错误',
+          itemStyle: { color: '#E6A23C' },
+        },
+      ],
+    }],
+  })
+}
+
+// ==========================================
+// 全局：获取在线节点列表
+// ==========================================
+const fetchNodes = async () => {
+  try {
+    const res       = await axios.get(`${API_BASE}/api/nodes`)
+    availableNodes.value = res.data.nodes || []
+    // 默认选中第一个节点
+    if (availableNodes.value.length > 0 && !selectedNode.value) {
+      selectedNode.value = availableNodes.value[0].node_id
+      benchNode.value    = availableNodes.value[0].node_id
+    }
+  } catch (e) {
+    console.error('获取节点列表失败', e)
+  }
+}
+
+// Tab切换时刷新对应数据
+const handleTabChange = (tabName) => {
+  if (tabName === 'history') {
+    fetchHistory()
+  } else if (tabName === 'reports') {
+    fetchReportList()
+  }
+}
+
+// ==========================================
+// 生命周期
+// ==========================================
+let nodesTimer   = null
+let monitorTimer2 = null
+
+onMounted(() => {
+  fetchCases()
+  fetchNodes()
+
+  // 定期刷新节点列表（ESP32接入后自动出现）
+  nodesTimer = setInterval(fetchNodes, 5000)
+
+  // 定期刷新监控数据
+  monitorTimer2 = setInterval(fetchMonitorData, 1500)
+})
+
+onUnmounted(() => {
+  stopPolling()
+  if (nodesTimer)    clearInterval(nodesTimer)
+  if (monitorTimer2) clearInterval(monitorTimer2)
+  if (reportChartInst.value) reportChartInst.value.dispose()
+  if (detailChartInst.value) detailChartInst.value.dispose()
+})
 </script>
 
 <template>
-  <div class="bench-container">
+  <div class="app-container">
+    <!-- ==================== Header ==================== -->
     <div class="header">
       <div class="header-left">
         <span class="logo">⚡</span>
         <span class="title">车载环境传感器 | 自动化台架测试系统 v2.0</span>
       </div>
       <div class="header-right">
-        <el-button type="primary" size="large" @click="startBench" :loading="benchStatus.is_running" :disabled="selectedCaseIds.length === 0">
-          {{ benchStatus.is_running ? '台架运行中...' : `执行选中用例 (${selectedCaseIds.length})` }}
-        </el-button>
+        <span class="node-count">
+          在线节点：{{ availableNodes.length }} 个
+        </span>
       </div>
     </div>
 
-    <div class="main-layout">
-      <!-- 左侧面板 -->
-      <div class="panel left-panel">
-        <div class="panel-title">测试用例编排</div>
-        <div class="case-list">
-          <div v-for="c in caseTemplates" :key="c.id" class="case-item" :class="{ active: getCaseStatus(c.id) === 'RUNNING' }">
-            <el-checkbox v-model="selectedCaseIds" :label="c.id" :disabled="benchStatus.is_running" style="margin-right: 10px;" />
-            <span class="case-name" :title="c.type === 'custom' ? '自定义用例 (点击查看)' : '预置用例 (点击修改参数)'" @click="handleCaseClick(c)">
-              {{ c.name }}
-              <el-tag v-if="c.type === 'custom'" size="small" type="warning" style="margin-left: 5px;">Custom</el-tag>
-            </span>
-            <div style="display: flex; align-items: center; margin-left: auto;">
-              <!-- 删除按钮：仅对自定义用例且非运行状态时显示 -->
-              <el-button
-                v-if="c.type === 'custom' && !benchStatus.is_running"
-                type="danger"
-                :icon="Delete"
-                size="small"
-                circle
-                style="margin-right: 8px;"
-                @click.stop="deleteCustomCase(c.id)"
+    <!-- ==================== Tabs ==================== -->
+    <el-tabs
+      v-model="activeTab"
+      type="border-card"
+      class="main-tabs"
+      @tab-change="handleTabChange"
+    >
+
+      <!-- ========== Tab1：实时监控 ========== -->
+      <el-tab-pane label="📡 实时监控" name="monitor">
+        <div class="tab-content">
+          <!-- 节点选择 -->
+          <div class="toolbar">
+            <span class="toolbar-label">监控节点：</span>
+            <el-select
+              v-model="selectedNode"
+              placeholder="请选择节点"
+              style="width:200px"
+              @change="fetchMonitorData"
+            >
+              <el-option
+                v-for="n in availableNodes"
+                :key="n.node_id"
+                :label="n.node_id"
+                :value="n.node_id"
               />
-              <!-- 原有的状态指示灯 -->
-              <span class="status-icon">
-                <span v-if="getCaseStatus(c.id) === 'PENDING'" class="dot pending"></span>
-                <span v-else-if="getCaseStatus(c.id) === 'RUNNING'" class="dot running"></span>
-                <span v-else-if="getCaseStatus(c.id) === 'PASS'" class="dot pass">✓</span>
-                <span v-else class="dot fail">✕</span>
-              </span>
+            </el-select>
+            <el-tag
+              v-if="availableNodes.length === 0"
+              type="info"
+              style="margin-left:10px"
+            >
+              暂无在线节点，请启动模拟器或接入ESP32
+            </el-tag>
+          </div>
+
+          <!-- 告警横幅 -->
+          <el-alert
+            v-if="isAbnormal"
+            :title="`⚠️ 数据异常告警：${abnormalMsg}`"
+            type="error"
+            :closable="false"
+            style="margin-bottom:16px"
+          />
+
+          <!-- 数据卡片 -->
+          <div class="data-cards">
+            <div class="data-card">
+              <div class="card-label">车内温度</div>
+              <div class="card-value temp">
+                {{ monitorData.in_car_temp?.toFixed(1) ?? '--' }}
+                <span class="unit">℃</span>
+              </div>
+            </div>
+            <div class="data-card">
+              <div class="card-label">车外温度</div>
+              <div class="card-value temp">
+                {{ monitorData.out_car_temp?.toFixed(1) ?? '--' }}
+                <span class="unit">℃</span>
+              </div>
+            </div>
+            <div class="data-card">
+              <div class="card-label">车内湿度</div>
+              <div class="card-value hum">
+                {{ monitorData.humidity?.toFixed(1) ?? '--' }}
+                <span class="unit">%RH</span>
+              </div>
+            </div>
+            <div class="data-card">
+              <div class="card-label">PM2.5</div>
+              <div class="card-value pm">
+                {{ monitorData.pm25?.toFixed(1) ?? '--' }}
+                <span class="unit">μg/m³</span>
+              </div>
+            </div>
+            <div class="data-card">
+              <div class="card-label">CO2浓度</div>
+              <div class="card-value co2">
+                {{ monitorData.co2?.toFixed(1) ?? '--' }}
+                <span class="unit">ppm</span>
+              </div>
+            </div>
+            <div class="data-card">
+              <div class="card-label">硬件状态</div>
+              <div
+                class="card-value"
+                :class="monitorData.status === 'FAULT' ? 'fault' : 'normal'"
+              >
+                {{ monitorData.status ?? 'UNKNOWN' }}
+                <div style="font-size:11px;color:#8b949e;margin-top:4px">
+                  {{ monitorData.fault_code }}
+                </div>
+              </div>
+            </div>
+            <div class="data-card">
+              <div class="card-label">传输延迟</div>
+              <div class="card-value">
+                {{ monitorData.latency_ms ?? '--' }}
+                <span class="unit">ms</span>
+              </div>
+            </div>
+            <div class="data-card">
+              <div class="card-label">合规状态</div>
+              <div
+                class="card-value"
+                :class="monitorData.is_abnormal ? 'fault' : 'normal'"
+              >
+                {{ monitorData.is_abnormal ? '⚠️ 超标' : '✅ 正常' }}
+              </div>
             </div>
           </div>
         </div>
-        <!-- 新增：底部创建按钮 -->
-        <div style="padding: 10px; border-top: 1px solid #3e3e42;">
-          <el-button type="warning" size="small" @click="openBuilder" :disabled="benchStatus.is_running" style="width: 100%;">+ 创建自定义用例</el-button>
-        </div>
-      </div>
+      </el-tab-pane>
 
-      <!-- 中间终端 -->
-      <div class="panel center-panel">
-        <div class="panel-title">执行控制台</div>
-        <div ref="terminalRef" class="terminal">
-          <div v-if="terminalLogs.length === 0" class="terminal-placeholder">> 等待启动...</div>
-          <div v-for="(log, index) in terminalLogs" :key="index" class="log-line" v-html="formatLog(log)"></div>
-        </div>
-      </div>
+      <!-- ========== Tab2：测试执行 ========== -->
+      <el-tab-pane label="🧪 测试执行" name="bench">
+        <div class="tab-content bench-layout">
 
-      <!-- 右侧数据 -->
-      <div class="panel right-panel">
-        <div class="panel-title">数据旁路监控</div>
-        <div class="data-cards">
-          <div class="data-card"><div class="label">车内温度</div><div class="value temp">{{ realtimePool.latest_data_snapshot?.in_car_temp?.toFixed(1) || '0.0' }}<span class="unit">℃</span></div></div>
-          <div class="data-card"><div class="label">PM2.5</div><div class="value pm">{{ realtimePool.latest_data_snapshot?.pm25?.toFixed(1) || '0.0' }}<span class="unit">ug/m³</span></div></div>
-          <div class="data-card"><div class="label">CO2</div><div class="value co2">{{ realtimePool.latest_data_snapshot?.co2?.toFixed(1) || '0.0' }}<span class="unit">ppm</span></div></div>
-          <div class="data-card full-width"><div class="label">硬件状态</div><div class="value" :class="realtimePool.latest_data_snapshot?.status === 'FAULT' ? 'fault' : 'normal'">{{ realtimePool.latest_data_snapshot?.status || 'NORMAL' }}</div></div>
-        </div>
-      </div>
-    </div>
+          <!-- 左侧：用例编排 -->
+          <div class="bench-left">
+            <div class="panel-title">测试用例编排</div>
 
-    <!-- 参数抽屉 -->
-    <el-drawer v-model="drawerVisible" title="用例参数配置" direction="rtl" size="300px">
-      <div v-if="editingCase" style="padding: 0 10px;">
-        <h4 style="color: #409EFF; margin-bottom: 20px;">{{ editingCase.name }}</h4>
-        <p style="color: #8b949e; font-size: 12px; margin-bottom: 20px;">修改以下参数将覆盖默认值。</p>
-        <el-form label-position="top" size="default">
-          <el-form-item v-for="(value, key) in editingParams" :key="key" :label="key">
-            <el-input v-model="editingParams[key]" type="number" placeholder="请输入数值" v-if="typeof value === 'number'"></el-input>
-            <el-input v-model="editingParams[key]" v-else></el-input>
+            <!-- 节点选择 -->
+            <div class="bench-node-select">
+              <span class="toolbar-label">目标节点：</span>
+              <el-select
+                v-model="benchNode"
+                placeholder="选择节点"
+                style="width:160px"
+                :disabled="benchStatus.is_running"
+              >
+                <el-option
+                  v-for="n in availableNodes"
+                  :key="n.node_id"
+                  :label="n.node_id"
+                  :value="n.node_id"
+                />
+              </el-select>
+            </div>
+
+            <!-- 用例列表 -->
+            <div class="case-list">
+              <div
+                v-for="c in caseTemplates"
+                :key="c.id"
+                class="case-item"
+                :class="{ active: getCaseStatus(c.id) === 'RUNNING' }"
+              >
+                <el-checkbox
+                  v-model="selectedCaseIds"
+                  :label="c.id"
+                  :disabled="benchStatus.is_running"
+                />
+                <span
+                  class="case-name"
+                  @click="handleCaseClick(c)"
+                  title="点击编辑参数"
+                >
+                  {{ c.name }}
+                </span>
+                <span class="status-icon">
+                  <span v-if="getCaseStatus(c.id) === 'PENDING'"      class="dot pending" />
+                  <span v-else-if="getCaseStatus(c.id) === 'RUNNING'" class="dot running" />
+                  <span v-else-if="getCaseStatus(c.id) === 'PASS'"    class="dot pass">✓</span>
+                  <span v-else-if="getCaseStatus(c.id) === 'FAIL'"    class="dot fail">✕</span>
+                  <span v-else-if="getCaseStatus(c.id) === 'ERROR'"   class="dot error">!</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="bench-actions">
+              <el-button
+                type="primary"
+                :loading="benchStatus.is_running"
+                :disabled="selectedCaseIds.length === 0 || !benchNode"
+                @click="startBench"
+                style="width:100%"
+              >
+                {{ benchStatus.is_running
+                    ? '运行中...'
+                    : `执行选中用例 (${selectedCaseIds.length})` }}
+              </el-button>
+              <el-button
+                type="danger"
+                :disabled="!benchStatus.is_running"
+                @click="stopBench"
+                style="width:100%;margin-top:8px;margin-left:0"
+              >
+                ⏹ 强制停止
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 右侧：执行控制台 -->
+          <div class="bench-right">
+            <div class="panel-title">
+              执行控制台
+              <span style="font-size:12px;color:#8b949e;margin-left:10px">
+                进度：{{ benchStatus.progress }}
+                | 当前：{{ benchStatus.current_case }}
+                | 节点：{{ benchStatus.target_node || '--' }}
+              </span>
+            </div>
+            <div ref="terminalRef" class="terminal">
+              <div
+                v-if="terminalLogs.length === 0"
+                class="terminal-placeholder"
+              >
+                > 勾选用例并选择节点，点击"执行选中用例"开始测试...
+              </div>
+              <div
+                v-for="(log, idx) in terminalLogs"
+                :key="idx"
+                class="log-line"
+                v-html="formatLog(log)"
+              />
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- ========== Tab3：历史数据 ========== -->
+      <el-tab-pane label="📊 历史数据" name="history">
+        <div class="tab-content">
+          <!-- 筛选工具栏 -->
+          <div class="toolbar">
+            <span class="toolbar-label">节点筛选：</span>
+            <el-select
+              v-model="historyNode"
+              placeholder="全部节点"
+              clearable
+              style="width:160px;margin-right:12px"
+            >
+              <el-option
+                v-for="n in availableNodes"
+                :key="n.node_id"
+                :label="n.node_id"
+                :value="n.node_id"
+              />
+            </el-select>
+
+            <span class="toolbar-label">数据状态：</span>
+            <el-select
+              v-model="historyAbnormal"
+              placeholder="全部"
+              clearable
+              style="width:120px;margin-right:12px"
+            >
+              <el-option label="全部"   :value="null"  />
+              <el-option label="仅异常" :value="true"  />
+              <el-option label="仅正常" :value="false" />
+            </el-select>
+
+            <el-button type="primary" @click="fetchHistory">查询</el-button>
+            <el-button @click="resetHistory">重置</el-button>
+          </div>
+
+          <!-- 数据表格 -->
+          <el-table
+            :data="historyData"
+            v-loading="historyLoading"
+            stripe
+            border
+            style="width:100%"
+            :row-class-name="({row}) => row.is_abnormal ? 'abnormal-row' : ''"
+          >
+            <el-table-column prop="sensor_id"   label="节点ID"   width="140" />
+            <el-table-column prop="in_car_temp" label="车内温(℃)" width="100">
+              <template #default="{ row }">
+                {{ row.in_car_temp?.toFixed(1) ?? '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="out_car_temp" label="车外温(℃)" width="100">
+              <template #default="{ row }">
+                {{ row.out_car_temp?.toFixed(1) ?? '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="humidity" label="湿度(%)" width="90">
+              <template #default="{ row }">
+                {{ row.humidity?.toFixed(1) ?? '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="pm25" label="PM2.5" width="90">
+              <template #default="{ row }">
+                {{ row.pm25?.toFixed(1) ?? '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="co2" label="CO2(ppm)" width="100">
+              <template #default="{ row }">
+                {{ row.co2?.toFixed(1) ?? '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="status"     label="状态"   width="90">
+              <template #default="{ row }">
+                <el-tag
+                  :type="row.status === 'FAULT' ? 'danger' : 'success'"
+                  size="small"
+                >
+                  {{ row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="is_abnormal" label="合规" width="80">
+              <template #default="{ row }">
+                <el-tag
+                  :type="row.is_abnormal ? 'danger' : 'success'"
+                  size="small"
+                >
+                  {{ row.is_abnormal ? '超标' : '正常' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="error_msg"
+              label="异常详情"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="latency_ms"  label="延迟(ms)" width="90" />
+            <el-table-column prop="server_time" label="采集时间"  width="160" />
+          </el-table>
+
+          <!-- 分页 -->
+          <div class="pagination">
+            <el-pagination
+              v-model:current-page="historyPage"
+              :page-size="historyPageSize"
+              :total="historyTotal"
+              layout="total, prev, pager, next"
+              @current-change="handleHistoryPageChange"
+            />
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- ========== Tab4：历史报告 ========== -->
+      <el-tab-pane label="📋 历史报告" name="reports">
+        <div class="tab-content">
+          <!-- 筛选工具栏 -->
+          <div class="toolbar">
+            <span class="toolbar-label">节点筛选：</span>
+            <el-select
+              v-model="reportListNode"
+              placeholder="全部节点"
+              clearable
+              style="width:160px;margin-right:12px"
+            >
+              <el-option
+                v-for="n in availableNodes"
+                :key="n.node_id"
+                :label="n.node_id"
+                :value="n.node_id"
+              />
+            </el-select>
+            <el-button type="primary" @click="fetchReportList">查询</el-button>
+          </div>
+
+          <!-- 报告列表 -->
+          <el-table
+            :data="reportList"
+            v-loading="reportListLoading"
+            stripe
+            border
+            style="width:100%"
+          >
+            <el-table-column prop="id"          label="ID"     width="60"  />
+            <el-table-column prop="report_name" label="报告名称"            />
+            <el-table-column prop="node_id"     label="节点"   width="140" />
+            <el-table-column prop="total_cases" label="总用例" width="80"  />
+            <el-table-column prop="pass_count"  label="通过"   width="70">
+              <template #default="{ row }">
+                <span style="color:#67C23A;font-weight:bold">{{ row.pass_count }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="fail_count"  label="失败"   width="70">
+              <template #default="{ row }">
+                <span style="color:#F56C6C;font-weight:bold">{{ row.fail_count }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="pass_rate"   label="通过率" width="90">
+              <template #default="{ row }">
+                <el-tag
+                  :type="row.pass_rate >= 80 ? 'success' : 'danger'"
+                  size="small"
+                >
+                  {{ row.pass_rate }}%
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="create_time" label="创建时间" width="160" />
+            <el-table-column label="操作" width="90">
+              <template #default="{ row }">
+                <el-button
+                  type="primary"
+                  size="small"
+                  @click="viewReportDetail(row.id)"
+                >
+                  查看
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <!-- 分页 -->
+          <div class="pagination">
+            <el-pagination
+              v-model:current-page="reportListPage"
+              :page-size="10"
+              :total="reportListTotal"
+              layout="total, prev, pager, next"
+              @current-change="(p) => { reportListPage = p; fetchReportList() }"
+            />
+          </div>
+        </div>
+      </el-tab-pane>
+
+    </el-tabs>
+
+    <!-- ========== 参数编辑抽屉 ========== -->
+    <el-drawer
+      v-model="drawerVisible"
+      title="用例参数配置"
+      direction="rtl"
+      size="320px"
+    >
+      <div v-if="editingCase" style="padding:0 10px">
+        <h4 style="color:#409EFF;margin-bottom:8px">{{ editingCase.name }}</h4>
+        <p style="color:#8b949e;font-size:12px;margin-bottom:16px">
+          修改参数将覆盖默认值，仅影响本次执行
+        </p>
+        <el-form label-position="top">
+          <el-form-item
+            v-for="(value, key) in editingParams"
+            :key="key"
+            :label="key"
+          >
+            <el-input
+              v-model="editingParams[key]"
+              type="number"
+              placeholder="请输入数值"
+            />
           </el-form-item>
-          <div v-if="Object.keys(editingParams).length === 0" style="color: #6e7681; text-align: center; margin-top: 30px;">该用例无可配置参数</div>
+          <div
+            v-if="Object.keys(editingParams).length === 0"
+            style="color:#6e7681;text-align:center;margin-top:30px"
+          >
+            该用例无可配置参数
+          </div>
         </el-form>
-        <el-button type="primary" @click="saveParams" style="width: 100%; margin-top: 20px;">保存并关闭</el-button>
+        <el-button
+          type="primary"
+          style="width:100%;margin-top:16px"
+          @click="saveParams"
+        >
+          保存并关闭
+        </el-button>
       </div>
     </el-drawer>
 
-    <!-- 新增：积木搭建器 Dialog -->
-    <el-dialog v-model="builderVisible" title="积木式用例搭建器" width="80%" top="5vh" :close-on-click-modal="false" class="builder-dialog">
-      <div class="builder-container">
-        <el-input v-model="builderName" placeholder="输入用例名称" style="margin-bottom: 15px; max-width: 300px;"></el-input>
+    <!-- ========== 测试报告弹窗 ========== -->
+    <el-dialog
+      v-model="reportVisible"
+      title="台架测试分析报告"
+      width="75%"
+      :close-on-click-modal="false"
+    >
+      <div v-if="reportData">
         <el-row :gutter="20">
-          <!-- 左侧工具箱 -->
-          <el-col :span="6">
-            <div class="toolbox-panel">
-              <div v-for="cat in blockToolbox" :key="cat.category" class="toolbox-group">
-                <div class="toolbox-title">{{ cat.category }}</div>
-                <el-button v-for="block in cat.blocks" :key="block.action" size="small" style="width: 100%; margin-bottom: 5px; justify-content: flex-start;" @click="addBlock(block)">
-                  + {{ block.name }}
-                </el-button>
-              </div>
-            </div>
+          <el-col :span="8">
+            <div ref="reportChartRef" style="height:250px" />
           </el-col>
-          <!-- 右侧画布 -->
-          <el-col :span="18">
-            <div class="canvas-panel">
-              <div v-if="builderSteps.length === 0" class="canvas-placeholder">
-                点击左侧积木添加到此画布
-              </div>
-              <div v-for="(step, index) in builderSteps" :key="index" class="step-card" :class="{ 'assertion-card': step.type === 'assertion' }">
-                <div class="step-header">
-                  <span class="step-index"># {{ index + 1 }}</span>
-                  <el-tag :type="step.type === 'assertion' ? 'danger' : 'info'" size="small">{{ step.action }}</el-tag>
-                  <div class="step-actions">
-                    <el-button size="small" circle @click="moveStep(index, -1)" :disabled="index === 0"><el-icon><Top /></el-icon></el-button>
-                    <el-button size="small" circle @click="moveStep(index, 1)" :disabled="index === builderSteps.length - 1"><el-icon><Bottom /></el-icon></el-button>
-                    <el-button size="small" type="danger" circle @click="removeStep(index)"><el-icon><Delete /></el-icon></el-button>
-                  </div>
-                </div>
-                <div class="step-params">
-                  <!-- 动态表单渲染 -->
-                  <template v-for="param in getBlockParams(step.action)" :key="param.key">
-                    <el-form-item label-width="80px" style="margin-bottom: 5px;">
-                      <template #label><span style="color: #aaa; font-size: 12px;">{{ param.key }}</span></template>
-                      <el-select v-if="param.type === 'select'" v-model="step.params[param.key]" size="small" style="width: 100%;">
-                        <el-option v-for="opt in param.options" :key="opt" :label="opt" :value="opt" />
-                      </el-select>
-                      <el-input v-else-if="param.type === 'number'" v-model.number="step.params[param.key]" size="small" placeholder="数值" />
-                      <el-input v-else v-model="step.params[param.key]" size="small" placeholder="文本" />
-                    </el-form-item>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </el-col>
-        </el-row>
-      </div>
-      <template #footer>
-        <el-button @click="builderVisible = false">取消</el-button>
-        <el-button type="warning" @click="saveBuilderCase">保存为自定义用例</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 报告弹窗 -->
-    <el-dialog v-model="reportVisible" title="台架深度测试分析报告" width="70%" :close-on-click-modal="false" class="report-dialog">
-      <div v-if="reportData" class="report-container">
-        <el-row :gutter="20">
-          <el-col :span="8"><div id="reportPieChart" style="height: 250px;"></div></el-col>
           <el-col :span="16">
-            <el-table :data="reportData.details" stripe border style="width: 100%" max-height="250">
-              <el-table-column prop="case" label="用例名称" width="220" />
-              <el-table-column prop="status" label="结果" width="80"><template #default="scope"><el-tag :type="scope.row.status === 'PASS' ? 'success' : 'danger'" size="small">{{ scope.row.status }}</el-tag></template></el-table-column>
-              <el-table-column prop="duration" label="耗时" width="80" />
-              <el-table-column prop="details" label="详细技术指标" show-overflow-tooltip />
+            <el-descriptions :column="3" border size="small" style="margin-bottom:12px">
+              <el-descriptions-item label="目标节点">
+                {{ reportData.target_node }}
+              </el-descriptions-item>
+              <el-descriptions-item label="总用例">
+                {{ reportData.total }}
+              </el-descriptions-item>
+              <el-descriptions-item label="通过率">
+                {{ reportData.pass_rate }}%
+              </el-descriptions-item>
+            </el-descriptions>
+            <el-table
+              :data="reportData.details"
+              stripe
+              border
+              max-height="220"
+              size="small"
+            >
+              <el-table-column prop="case"     label="用例名称" min-width="160" />
+              <el-table-column prop="status"   label="结果"     width="80">
+                <template #default="{ row }">
+                  <el-tag
+                    :type="row.status === 'PASS' ? 'success' : 'danger'"
+                    size="small"
+                  >
+                    {{ row.status }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="duration" label="耗时(s)"  width="80" />
+              <el-table-column prop="details"  label="详情"     show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ Array.isArray(row.details) ? row.details.join(' | ') : row.details }}
+                </template>
+              </el-table-column>
             </el-table>
           </el-col>
         </el-row>
       </div>
-      <template #footer><el-button @click="reportVisible = false">关闭</el-button></template>
+      <template #footer>
+        <el-button type="success" @click="saveReport">💾 保存报告</el-button>
+        <el-button @click="reportVisible = false">关闭</el-button>
+      </template>
     </el-dialog>
+
+    <!-- ========== 历史报告详情弹窗 ========== -->
+    <el-dialog
+      v-model="detailVisible"
+      :title="`报告详情：${detailReport?.report_name}`"
+      width="75%"
+    >
+      <div v-if="detailReport">
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <div ref="detailChartRef" style="height:220px" />
+          </el-col>
+          <el-col :span="16">
+            <el-descriptions :column="3" border size="small" style="margin-bottom:12px">
+              <el-descriptions-item label="节点">
+                {{ detailReport.node_id }}
+              </el-descriptions-item>
+              <el-descriptions-item label="通过率">
+                {{ detailReport.pass_rate }}%
+              </el-descriptions-item>
+              <el-descriptions-item label="创建时间">
+                {{ detailReport.create_time }}
+              </el-descriptions-item>
+            </el-descriptions>
+            <el-table
+              :data="detailReport.details"
+              stripe
+              border
+              max-height="200"
+              size="small"
+            >
+              <el-table-column prop="case"     label="用例名称" min-width="160" />
+              <el-table-column prop="status"   label="结果"     width="80">
+                <template #default="{ row }">
+                  <el-tag
+                    :type="row.status === 'PASS' ? 'success' : 'danger'"
+                    size="small"
+                  >
+                    {{ row.status }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="duration" label="耗时(s)"  width="80" />
+              <el-table-column prop="details"  label="详情"     show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ Array.isArray(row.details) ? row.details.join(' | ') : row.details }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-col>
+        </el-row>
+      </div>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
 <style scoped>
-/* 原有暗黑风格保持不变 */
-.bench-container { background: #1e1e1e; color: #d4d4d4; height: 100vh; display: flex; flex-direction: column; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
-.header { height: 50px; background: #252526; border-bottom: 1px solid #3e3e42; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; flex-shrink: 0; }
+/* ==================== 全局布局 ==================== */
+.app-container {
+  background:  #1e1e1e;
+  color:       #d4d4d4;
+  min-height:  100vh;
+  display:     flex;
+  flex-direction: column;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* ==================== Header ==================== */
+.header {
+  height:      50px;
+  background:  #252526;
+  border-bottom: 1px solid #3e3e42;
+  display:     flex;
+  justify-content: space-between;
+  align-items: center;
+  padding:     0 20px;
+  flex-shrink: 0;
+}
 .header-left { display: flex; align-items: center; gap: 10px; }
-.logo { font-size: 20px; }
-.title { font-size: 15px; color: #cccccc; font-weight: 500; }
-.main-layout { display: flex; flex: 1; overflow: hidden; padding: 10px; gap: 10px; }
-.panel { background: #252526; border: 1px solid #3e3e42; border-radius: 4px; display: flex; flex-direction: column; }
-.panel-title { padding: 8px 15px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #bbbbbb; border-bottom: 1px solid #3e3e42; background: #2d2d30; font-weight: bold; }
-.left-panel { width: 30%; }
-.case-list { padding: 10px 0; overflow-y: auto; flex: 1; }
-.case-item { padding: 10px 15px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #9cdcfe; border-left: 3px solid transparent; transition: background 0.2s; }
-.case-item.active { background: #37373d; border-left-color: #409EFF; }
-.case-name { cursor: pointer; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logo        { font-size: 20px; }
+.title       { font-size: 15px; color: #cccccc; font-weight: 500; }
+.node-count  { font-size: 13px; color: #8b949e; }
+
+/* ==================== Tabs ==================== */
+.main-tabs { flex: 1; margin: 10px; }
+
+:deep(.el-tabs--border-card) {
+  background:   #252526;
+  border-color: #3e3e42;
+}
+:deep(.el-tabs--border-card > .el-tabs__header) {
+  background:   #2d2d30;
+  border-color: #3e3e42;
+}
+:deep(.el-tabs--border-card > .el-tabs__header .el-tabs__item) {
+  color: #8b949e;
+}
+:deep(.el-tabs--border-card > .el-tabs__header .el-tabs__item.is-active) {
+  color:       #ffffff;
+  background:  #252526;
+}
+:deep(.el-tabs__content) { padding: 0; }
+
+/* ==================== Tab内容区 ==================== */
+.tab-content {
+  padding: 16px;
+  height:  calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+/* ==================== 工具栏 ==================== */
+.toolbar {
+  display:     flex;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap:   wrap;
+  gap:         8px;
+}
+.toolbar-label { color: #8b949e; font-size: 13px; }
+
+/* ==================== 监控数据卡片 ==================== */
+.data-cards {
+  display:   grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap:       12px;
+}
+.data-card {
+  background:   #2d2d30;
+  border:       1px solid #3e3e42;
+  border-radius: 6px;
+  padding:      16px;
+  border-left:  3px solid #409EFF;
+}
+.card-label {
+  font-size:    11px;
+  color:        #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.card-value {
+  font-size:   26px;
+  font-weight: bold;
+  color:       #d2d8de;
+}
+.unit   { font-size: 12px; color: #8b949e; margin-left: 4px; font-weight: normal; }
+.temp   { color: #4fc1ff; }
+.hum    { color: #9cdcfe; }
+.pm     { color: #e5c07b; }
+.co2    { color: #c678dd; }
+.normal { color: #67C23A; }
+.fault  { color: #F56C6C; animation: blink 1s infinite; }
+
+/* ==================== 测试执行布局 ==================== */
+.bench-layout {
+  display: flex;
+  gap:     12px;
+  padding: 16px;
+  height:  calc(100vh - 120px);
+  overflow: hidden;
+}
+.bench-left {
+  width:        280px;
+  flex-shrink:  0;
+  background:   #2d2d30;
+  border:       1px solid #3e3e42;
+  border-radius: 4px;
+  display:      flex;
+  flex-direction: column;
+  padding:      12px;
+  gap:          10px;
+}
+.bench-right {
+  flex:         1;
+  background:   #2d2d30;
+  border:       1px solid #3e3e42;
+  border-radius: 4px;
+  display:      flex;
+  flex-direction: column;
+}
+.panel-title {
+  font-size:    12px;
+  font-weight:  bold;
+  color:        #bbbbbb;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding:      8px 12px;
+  background:   #252526;
+  border-bottom: 1px solid #3e3e42;
+}
+.bench-node-select {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+}
+
+/* ==================== 用例列表 ==================== */
+.case-list  { flex: 1; overflow-y: auto; }
+.case-item  {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  padding:     8px 4px;
+  font-size:   13px;
+  color:       #9cdcfe;
+  border-left: 3px solid transparent;
+  transition:  background 0.2s;
+}
+.case-item.active {
+  background:       #37373d;
+  border-left-color: #409EFF;
+}
+.case-name {
+  flex:          1;
+  cursor:        pointer;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+  font-size:     12px;
+}
 .case-name:hover { color: #ffffff; }
 .status-icon { width: 20px; text-align: center; }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.dot {
+  display:       inline-block;
+  width:         8px;
+  height:        8px;
+  border-radius: 50%;
+}
 .dot.pending { background: #6e7681; }
 .dot.running { background: #409EFF; animation: blink 1s infinite; }
-.dot.pass { color: #67C23A; font-size: 14px; background: transparent; width: auto; }
-.dot.fail { color: #F56C6C; font-size: 14px; background: transparent; width: auto; }
-@keyframes blink { 50% { opacity: 0.2; } }
-.center-panel { flex: 1; }
-.terminal { flex: 1; padding: 15px; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.6; overflow-y: auto; background: #1e1e1e; }
+.dot.pass    { color: #67C23A; font-size: 14px; background: transparent; width: auto; }
+.dot.fail    { color: #F56C6C; font-size: 14px; background: transparent; width: auto; }
+.dot.error   { color: #E6A23C; font-size: 14px; background: transparent; width: auto; }
+
+.bench-actions { display: flex; flex-direction: column; }
+
+/* ==================== 终端 ==================== */
+.terminal {
+  flex:        1;
+  padding:     12px 16px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size:   12px;
+  line-height: 1.7;
+  overflow-y:  auto;
+  background:  #1e1e1e;
+}
 .terminal-placeholder { color: #6e7681; }
 .log-line { white-space: pre-wrap; word-break: break-all; }
-.right-panel { width: 20%; }
-.data-cards { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-.data-card { background: #2d2d30; padding: 12px; border-radius: 4px; border-left: 3px solid #3e3e42; }
-.data-card.full-width { border-left-color: #67C23A; }
-.label { font-size: 11px; color: #8b949e; margin-bottom: 5px; text-transform: uppercase; }
-.value { font-size: 20px; font-weight: bold; color: #d2d8de; }
-.unit { font-size: 12px; color: #8b949e; margin-left: 4px; font-weight: normal; }
-.temp { color: #4fc1ff; } .pm { color: #e5c07b; } .co2 { color: #c678dd; } .normal { color: #67C23A; } .fault { color: #F56C6C; animation: blink 1s infinite; }
 
-/* 报告与抽屉样式 */
-:deep(.report-dialog .el-dialog) { background: #fff; color: #333; border-radius: 8px; }
-:deep(.report-dialog .el-dialog__header) { border-bottom: 1px solid #eee; }
-:deep(.el-drawer) { background: #2d2d30 !important; color: #d4d4d4 !important; }
-:deep(.el-drawer__header) { color: #ffffff !important; border-bottom: 1px solid #3e3e42; margin-bottom: 0; padding-bottom: 15px;}
-:deep(.el-drawer__body) { padding-top: 10px; }
+/* ==================== 分页 ==================== */
+.pagination {
+  display:         flex;
+  justify-content: flex-end;
+  margin-top:      16px;
+}
+
+/* ==================== 表格异常行高亮 ==================== */
+:deep(.abnormal-row) { background-color: #3a1f1f !important; }
+
+/* ==================== Element Plus 暗色覆盖 ==================== */
+:deep(.el-drawer)         { background: #2d2d30 !important; color: #d4d4d4 !important; }
+:deep(.el-drawer__header) { color: #ffffff !important; border-bottom: 1px solid #3e3e42; margin-bottom: 0; padding-bottom: 15px; }
 :deep(.el-input__wrapper) { background: #1e1e1e !important; box-shadow: 0 0 0 1px #3e3e42 inset !important; }
-:deep(.el-input__inner) { color: #d4d4d4 !important; }
+:deep(.el-input__inner)   { color: #d4d4d4 !important; }
 :deep(.el-form-item__label) { color: #bbbbbb !important; }
+:deep(.el-select__wrapper){ background: #1e1e1e !important; box-shadow: 0 0 0 1px #3e3e42 inset !important; color: #d4d4d4 !important; }
+:deep(.el-table)          { background: #252526; color: #d4d4d4; }
+:deep(.el-table th)       { background: #2d2d30 !important; color: #bbbbbb !important; }
+:deep(.el-table tr)       { background: #252526 !important; }
+:deep(.el-table--striped .el-table__body tr.el-table__row--striped td) { background: #2a2a2d !important; }
+:deep(.el-table td)       { border-color: #3e3e42 !important; }
+:deep(.el-table th)       { border-color: #3e3e42 !important; }
+:deep(.el-pagination)     { color: #8b949e; }
+:deep(.el-alert--error.is-light) { background: #3a1f1f; border-color: #F56C6C; }
 
-/* 新增：积木搭建器深色样式 */
-.builder-dialog .el-dialog { background: #252526 !important; }
-.builder-dialog .el-dialog__header { border-bottom: 1px solid #3e3e42; }
-.builder-dialog .el-dialog__title { color: #fff; }
-.toolbox-panel { background: #1e1e1e; padding: 10px; border-radius: 4px; border: 1px solid #3e3e42; min-height: 300px; }
-.toolbox-title { color: #e5c07b; font-size: 12px; margin-bottom: 10px; font-weight: bold; text-transform: uppercase; }
-.toolbox-group { margin-bottom: 15px; }
-.canvas-panel { background: #1e1e1e; padding: 15px; border-radius: 4px; border: 1px solid #3e3e42; min-height: 400px; overflow-y: auto; }
-.canvas-placeholder { color: #6e7681; text-align: center; margin-top: 150px; font-size: 14px; }
-.step-card { background: #2d2d30; border: 1px solid #3e3e42; border-radius: 4px; margin-bottom: 10px; border-left: 4px solid #409EFF; }
-.step-card.assertion-card { border-left-color: #F56C6C; }
-.step-header { display: flex; align-items: center; padding: 8px 10px; border-bottom: 1px dashed #3e3e42; }
-.step-index { color: #6e7681; margin-right: 10px; font-size: 12px; }
-.step-actions { margin-left: auto; display: flex; gap: 5px; }
-.step-params { padding: 10px; background: #252526; }
+/* ==================== 动画 ==================== */
+@keyframes blink { 50% { opacity: 0.2; } }
 </style>
