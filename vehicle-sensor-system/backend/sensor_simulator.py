@@ -9,9 +9,9 @@ from crypto_utils import encrypt_data
 # ================= 配置区域 =================
 BROKER = "broker.emqx.io"
 PORT = 1883
-SENSOR_ID = "ENV_SENSOR_001"
-DATA_TOPIC = "vcar/sensors/environment/data"
-CONTROL_TOPIC = "vcar/sensors/environment/control"
+SENSOR_ID = "ENV_SIM_001"
+DATA_TOPIC = f"vcar/sensors/{SENSOR_ID}/data"
+CONTROL_TOPIC = f"vcar/sensors/{SENSOR_ID}/control"
 
 
 # ===========================================
