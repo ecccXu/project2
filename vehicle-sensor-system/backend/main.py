@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 # 顺序很重要：database → models → 其他
 # =========================================
 from database import get_db, init_db, SessionLocal
+import models
 from models import SensorData, TestReport
 from crypto_utils import decrypt_data, encrypt_data
 from test_engine import run_content_test, get_default_config
@@ -419,6 +420,16 @@ def get_node_pool_status(node_id: str):
 # API路由：历史数据查询
 # ==========================================
 @app.get("/api/data/history", summary="历史传感器数据查询")
+def _safe_decrypt_float(encrypted_str: Optional[str]) -> Optional[float]:
+    """安全解密数值字段，失败返回None"""
+    if not encrypted_str:
+        return None
+    try:
+        decrypted = decrypt_data(encrypted_str)
+        return float(decrypted) if decrypted else None
+    except (ValueError, TypeError):
+        return None
+
 def get_history(
     node_id:     Optional[str] = Query(None,  description="节点ID筛选，为空则查全部"),
     is_abnormal: Optional[bool] = Query(None, description="是否只看异常数据"),
@@ -465,17 +476,6 @@ def get_history(
         "limit":  limit,
         "data":   result,
     }
-
-
-def _safe_decrypt_float(encrypted_str: Optional[str]) -> Optional[float]:
-    """安全解密数值字段，失败返回None"""
-    if not encrypted_str:
-        return None
-    try:
-        decrypted = decrypt_data(encrypted_str)
-        return float(decrypted) if decrypted else None
-    except (ValueError, TypeError):
-        return None
 
 
 # ==========================================
