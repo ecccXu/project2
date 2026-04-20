@@ -415,11 +415,6 @@ def get_node_pool_status(node_id: str):
         "latest_in_queue":      latest,
     }
 
-
-# ==========================================
-# API路由：历史数据查询
-# ==========================================
-@app.get("/api/data/history", summary="历史传感器数据查询")
 def _safe_decrypt_float(encrypted_str: Optional[str]) -> Optional[float]:
     """安全解密数值字段，失败返回None"""
     if not encrypted_str:
@@ -429,7 +424,10 @@ def _safe_decrypt_float(encrypted_str: Optional[str]) -> Optional[float]:
         return float(decrypted) if decrypted else None
     except (ValueError, TypeError):
         return None
-
+# ==========================================
+# API路由：历史数据查询
+# ==========================================
+@app.get("/api/data/history", summary="历史传感器数据查询")
 def get_history(
     node_id:     Optional[str] = Query(None,  description="节点ID筛选，为空则查全部"),
     is_abnormal: Optional[bool] = Query(None, description="是否只看异常数据"),
