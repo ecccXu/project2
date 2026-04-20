@@ -3,6 +3,7 @@
 import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import axios from 'axios'
 import * as echarts from 'echarts'
+import { ElMessage } from 'element-plus'
 
 const API_BASE = 'http://127.0.0.1:8000'
 
