@@ -467,7 +467,7 @@ onUnmounted(() => {
     <div class="header">
       <div class="header-left">
         <span class="logo">⚡</span>
-        <span class="title">车载环境传感器 | 自动化台架测试系统 v2.0</span>
+        <span class="title">车载环境传感器 | 自动化台架测试系统</span>
       </div>
       <div class="header-right">
         <span class="node-count">

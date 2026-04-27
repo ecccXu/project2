@@ -5,10 +5,11 @@ import json
 import time
 import random
 from crypto_utils import encrypt_data
+import os
 
 # ================= 配置区域 =================
-BROKER = "broker.emqx.io"
-PORT = 1883
+BROKER = os.environ.get('MQTT_BROKER', 'localhost')
+PORT = int(os.environ.get('MQTT_PORT', '1883'))
 SENSOR_ID = "ENV_SIM_001"
 DATA_TOPIC = f"vcar/sensors/{SENSOR_ID}/data"
 CONTROL_TOPIC = f"vcar/sensors/{SENSOR_ID}/control"

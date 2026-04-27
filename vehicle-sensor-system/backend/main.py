@@ -60,7 +60,7 @@ logger = logging.getLogger("MainServer")
 #   4. 订阅 vcar/sensors/ESP32_001/control
 #   后端无需任何改动即可自动识别新节点
 # ==========================================
-BROKER      = os.environ.get('MQTT_BROKER', 'broker.emqx.io')
+BROKER      = os.environ.get('MQTT_BROKER', 'localhost')
 PORT        = int(os.environ.get('MQTT_PORT', '1883'))
 CLIENT_ID   = "Backend_TestBench_V2"
 DATA_TOPIC  = "vcar/sensors/+/data"       # 订阅所有节点的数据
