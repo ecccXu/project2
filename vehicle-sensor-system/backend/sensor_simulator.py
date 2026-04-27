@@ -22,7 +22,7 @@ class CarEnvironmentSimulator:
     def __init__(self, sensor_id):
         self.sensor_id = sensor_id
 
-        self.state = {
+        self.NORMAL_TARGETS = {
             "in_car_temp": 25.0,
             "out_car_temp": 25.0,
             "humidity": 50.0,
@@ -30,7 +30,8 @@ class CarEnvironmentSimulator:
             "co2": 400.0
         }
 
-        self.targets = self.state.copy()
+        self.state = self.NORMAL_TARGETS.copy()
+        self.targets = self.NORMAL_TARGETS.copy()
 
         self.status = "NORMAL"
         self.fault_code = "NONE"
@@ -67,7 +68,10 @@ class CarEnvironmentSimulator:
             print(f"[ERROR] 解析控制指令失败: {e}")
 
     def _apply_scenario(self, scenario_name):
-        self._clear_fault()
+        self.status = "NORMAL"
+        self.fault_code = "NONE"
+        self.overrides.clear()
+
         if scenario_name == "static_parking_summer":
             self.targets = {"in_car_temp": 65.0, "out_car_temp": 35.0, "humidity": 40.0, "pm25": 30.0, "co2": 400.0}
             print("[INFO] 已切换工况：夏日静置 (车内高温)")
@@ -104,7 +108,8 @@ class CarEnvironmentSimulator:
         self.status = "NORMAL"
         self.fault_code = "NONE"
         self.overrides.clear()
-        print("[INFO] 已清除故障，恢复正常物理仿真")
+        self.targets = self.NORMAL_TARGETS.copy()
+        print("[INFO] 已清除故障 + 恢复默认工况，物理仿真重新初始化")
 
     def _update_physics(self):
         tau = 5.0
