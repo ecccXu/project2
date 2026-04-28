@@ -1,79 +1,67 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/* ============================================================
+   style.css - 项目专属全局样式
+   ============================================================
+   设计变量、重置、主题已迁移到 styles/ 目录：
+     - styles/variables.css  设计变量
+     - styles/reset.css       CSS 重置
+     - styles/theme.css       主题样式
+   
+   这里仅保留项目级的强制覆盖
+   ============================================================ */
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* ⚠️ 强制覆盖：移除 Vue 模板自带的暗色主题 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: var(--text-primary);
+    background-color: var(--bg-page);
+  }
+  
+  body {
+    color: var(--text-primary);
+    background-color: var(--bg-page);
+  }
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+/* App 容器 */
+#app {
+  width: 100%;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  text-align: left;
 }
 
+/* body 居中布局重置（移除原模板的 flex 居中） */
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  display: block;
   min-width: 320px;
   min-height: 100vh;
 }
 
+/* h1 默认样式重置 */
 h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+  font-size: var(--font-2xl);
+  line-height: var(--line-height-tight);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
+/* 按钮重置（避免影响 Element Plus 按钮） */
+button:not(.el-button) {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  padding: 0.4em 1em;
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-medium);
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  transition: all var(--transition-fast);
 }
 
-.card {
-  padding: 2em;
-}
-
-#app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+button:not(.el-button):hover {
+  border-color: var(--color-primary);
+  background-color: var(--bg-hover);
 }
