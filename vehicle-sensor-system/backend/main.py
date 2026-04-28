@@ -315,7 +315,7 @@ async def lifespan(app: FastAPI):
 
     thread = threading.Thread(target=mqtt_thread_task, daemon=True)
     thread.start()
-    logger.info("[系统启动] 全部初始化完成 ✅")
+    logger.info("[系统启动] 全部初始化完成")
     yield
 
     logger.info("[系统关闭] 正在清理资源...")
