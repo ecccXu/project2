@@ -26,6 +26,9 @@ from models import SensorData, TestReport
 from crypto_utils import decrypt_data, encrypt_data
 from test_engine import run_content_test, get_default_config
 
+# test_bench 在文件末尾导入，解决循环导入问题
+# （test_bench需要本文件的 data_lock 等，但本文件不在顶部导入它）
+
 # ==========================================
 # 日志配置
 # ==========================================
@@ -209,7 +212,7 @@ def on_message(client, userdata, msg):
             return
 
         # 3. JSON解析
-        data = json.loads(decrypted_json)
+        data        = json.loads(decrypted_json)
         sensor_data = data.get('data', {})
 
         # 4. 计算传输延迟

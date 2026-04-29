@@ -16,6 +16,7 @@ logger = logging.getLogger("Database")
 #
 # 设置环境变量方式：
 #   Windows: set DATABASE_URL=sqlite:///./test_system.db
+#   Linux:   export DATABASE_URL=sqlite:///./test_system.db
 # ==========================================
 SQLALCHEMY_DATABASE_URL = os.environ.get(
     'DATABASE_URL',
@@ -26,7 +27,7 @@ SQLALCHEMY_DATABASE_URL = os.environ.get(
 # 引擎创建
 # check_same_thread=False：
 #   SQLite默认只允许创建它的线程访问
-#   MQTT线程和FastAPI线程同时访问，必须关闭此限制
+#   我们有MQTT线程和FastAPI线程同时访问，必须关闭此限制
 # ==========================================
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
