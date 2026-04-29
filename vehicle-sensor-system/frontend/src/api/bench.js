@@ -47,3 +47,17 @@ export function getBenchLogs() {
 export function getBenchReport() {
   return request.get('/api/bench/report')
 }
+
+/**
+ * 添加自定义测试用例
+ */
+export function addCustomCase(caseData) {
+  return request.post('/api/bench/cases/custom', caseData)
+}
+
+/**
+ * 删除自定义测试用例
+ */
+export function removeCustomCase(caseId) {
+  return request.delete(`/api/bench/cases/custom/${caseId}`)
+}

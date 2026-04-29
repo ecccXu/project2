@@ -1,7 +1,7 @@
 <!-- frontend/src/views/TestBenchView.vue -->
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
 import {
   getNodes,
@@ -12,8 +12,10 @@ import {
   getBenchLogs,
   getBenchReport,
   saveReport,
+  addCustomCase,
+  removeCustomCase,
 } from '@/api'
-
+import request from '@/api/request'
 // ==========================================
 // 状态：节点
 // ==========================================
@@ -29,6 +31,36 @@ const drawerVisible = ref(false)
 const editingCase = ref(null)
 const editingParams = ref({})
 
+// ==========================================
+// 自定义用例管理
+// ==========================================
+const addCaseDialogVisible = ref(false)
+const newCustomCase = ref({
+  name: '',
+  command: 'override_value',
+  target: 'in_car_temp',
+  value: 90,
+  wait_time: 10,
+  check_field: 'in_car_temp',
+  expected_min: 80,
+  expected_max: 100,
+})
+
+// 可用的指令类型
+const commandOptions = [
+  { label: '覆盖传感器值 (override_value)', value: 'override_value' },
+  { label: '切换工况 (set_scenario)', value: 'set_scenario' },
+  { label: '注入故障 (inject_fault)', value: 'inject_fault' },
+]
+
+// 可用的检测字段
+const fieldOptions = [
+  { label: '车内温度', value: 'in_car_temp' },
+  { label: '车外温度', value: 'out_car_temp' },
+  { label: '车内湿度', value: 'humidity' },
+  { label: 'PM2.5', value: 'pm25' },
+  { label: 'CO₂', value: 'co2' },
+]
 // ==========================================
 // 状态：执行
 // ==========================================
@@ -101,7 +133,111 @@ const saveParams = () => {
   }
   drawerVisible.value = false
 }
+// ==========================================
+// 打开新增用例弹窗
+// ==========================================
+const openAddCaseDialog = () => {
+  newCustomCase.value = {
+    name: '',
+    command: 'override_value',
+    target: 'in_car_temp',
+    value: 90,
+    wait_time: 10,
+    check_field: 'in_car_temp',
+    expected_min: 80,
+    expected_max: 100,
+  }
+  addCaseDialogVisible.value = true
+}
 
+// ==========================================
+// 提交新增用例
+// ==========================================
+const submitAddCase = async () => {
+  const { name, command, target, value, wait_time, check_field, expected_min, expected_max } = newCustomCase.value
+
+  if (!name.trim()) {
+    ElMessage.warning('请输入用例名称')
+    return
+  }
+
+  // 根据指令类型构造 params
+  let params = {}
+  if (command === 'override_value') {
+    // target 是传感器字段，value 是目标值
+    params = { target: target, value: Number(value) }
+  } else if (command === 'set_scenario') {
+    // set_scenario 的 params 中 scenario 字段就是工况名，这里让用户输入
+    params = { scenario: target }
+  } else if (command === 'inject_fault') {
+    params = { target: target, fault_type: value }
+  }
+
+  const caseData = {
+    name: name.trim(),
+    command: command,
+    params: params,
+    wait_time: Number(wait_time),
+    check_field: check_field,
+    expected_min: Number(expected_min),
+    expected_max: Number(expected_max),
+  }
+
+  try {
+    const res = await addCustomCase(caseData)
+    if (res.success) {
+      ElMessage.success(`用例添加成功: ${res.case_id}`)
+      addCaseDialogVisible.value = false
+      await fetchCases() // 刷新用例列表
+    } else {
+      ElMessage.error(res.message || '添加失败')
+    }
+  } catch (e) {
+    console.error('添加用例失败', e)
+  }
+}
+
+// ==========================================
+// 删除自定义用例
+// ==========================================
+const handleDeleteCase = async (caseItem) => {
+  const isCustom = caseItem.type === 'custom' || caseItem.id.startsWith('custom_')
+  if (!isCustom) {
+    ElMessage.warning('只能删除自定义用例')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除用例「${caseItem.name}」吗？此操作不可恢复。`,
+      '确认删除',
+      {
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+  } catch {
+    return // 用户取消
+  }
+
+  try {
+    const res = await removeCustomCase(caseItem.id)
+    if (res.success) {
+      ElMessage.success('用例已删除')
+      // 如果该用例被选中，从选中列表中移除
+      const idx = selectedCaseIds.value.indexOf(caseItem.id)
+      if (idx > -1) {
+        selectedCaseIds.value.splice(idx, 1)
+      }
+      await fetchCases() // 刷新用例列表
+    } else {
+      ElMessage.error(res.message || '删除失败')
+    }
+  } catch (e) {
+    console.error('删除用例失败', e)
+  }
+}
 // ==========================================
 // 启动测试
 // ==========================================
@@ -151,7 +287,6 @@ const startBench = async () => {
 }
 
 // 由于 bench/run 接口需要 node_id 作为 query 参数，单独封装
-import request from '@/api/request'
 const runBenchWithNode = (nodeId, cases) => {
   return request.post(`/api/bench/run?node_id=${nodeId}`, cases)
 }
@@ -384,8 +519,31 @@ onUnmounted(() => {
                 <span v-else-if="getCaseStatus(c.id) === 'FAIL'" class="dot fail">✕</span>
                 <span v-else-if="getCaseStatus(c.id) === 'ERROR'" class="dot error">!</span>
               </span>
+              <!-- 自定义用例删除按钮 -->
+              <span
+                v-if="c.type === 'custom' || c.id.startsWith('custom_')"
+                class="delete-icon"
+                :disabled="benchStatus.is_running"
+                @click.stop="handleDeleteCase(c)"
+                title="删除此用例"
+              >
+                🗑
+              </span>
             </div>
           </div>
+          <!-- 添加自定义用例按钮 -->
+            <div class="add-case-btn" style="padding: 0 var(--spacing-2) var(--spacing-3)">
+              <el-button
+                type="success"
+                plain
+                size="small"
+                style="width: 100%"
+                :disabled="benchStatus.is_running"
+                @click="openAddCaseDialog"
+              >
+                ＋ 新增用例
+              </el-button>
+            </div>
         </div>
 
         <!-- 操作按钮 -->
@@ -482,7 +640,112 @@ onUnmounted(() => {
         </el-button>
       </div>
     </el-drawer>
+    <!-- ===== 新增用例弹窗 ===== -->
+    <el-dialog
+      v-model="addCaseDialogVisible"
+      title="新增自定义测试用例"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-position="top" size="default">
+        <!-- 用例名称 -->
+        <el-form-item label="用例名称" required>
+          <el-input
+            v-model="newCustomCase.name"
+            placeholder="例如：自定义高温报警测试"
+            maxlength="50"
+            show-word-limit
+          />
+        </el-form-item>
 
+        <!-- 指令类型 -->
+        <el-form-item label="指令类型" required>
+          <el-select v-model="newCustomCase.command" style="width: 100%">
+            <el-option
+              v-for="opt in commandOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <!-- 指令参数：target -->
+        <el-form-item label="目标传感器字段" required>
+          <el-select v-model="newCustomCase.target" style="width: 100%">
+            <el-option
+              v-for="opt in fieldOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <!-- 指令参数：value -->
+        <el-form-item
+          :label="newCustomCase.command === 'set_scenario' ? '工况名称' : '目标值'"
+          required
+        >
+          <el-input
+            v-model="newCustomCase.value"
+            :placeholder="newCustomCase.command === 'set_scenario'
+              ? '例如：tunnel_following'
+              : '例如：90'"
+          />
+        </el-form-item>
+
+        <!-- 等待稳定时间 -->
+        <el-form-item label="等待稳定时间（秒）" required>
+          <el-input-number
+            v-model="newCustomCase.wait_time"
+            :min="1"
+            :max="120"
+            :step="1"
+            style="width: 100%"
+          />
+        </el-form-item>
+
+        <!-- 检测字段 -->
+        <el-form-item label="检测字段" required>
+          <el-select v-model="newCustomCase.check_field" style="width: 100%">
+            <el-option
+              v-for="opt in fieldOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <!-- 预期范围 -->
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="预期最小值" required>
+              <el-input-number
+                v-model="newCustomCase.expected_min"
+                :step="1"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="预期最大值" required>
+              <el-input-number
+                v-model="newCustomCase.expected_max"
+                :step="1"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="addCaseDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitAddCase">确认添加</el-button>
+      </template>
+    </el-dialog>
     <!-- ===== 测试报告弹窗 ===== -->
     <el-dialog
       v-model="reportVisible"
@@ -775,5 +1038,23 @@ onUnmounted(() => {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* 删除按钮样式 */
+.delete-icon {
+  cursor: pointer;
+  font-size: var(--font-sm);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  padding: 0 4px;
+  color: var(--color-danger);
+}
+
+.case-item:hover .delete-icon {
+  opacity: 0.7;
+}
+
+.delete-icon:hover {
+  opacity: 1 !important;
 }
 </style>

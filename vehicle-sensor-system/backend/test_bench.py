@@ -3,6 +3,8 @@
 import time
 import logging
 import threading
+import os
+import json
 from collections import deque
 from datetime import datetime
 from typing import Callable, Optional
@@ -10,7 +12,10 @@ from typing import Callable, Optional
 from crypto_utils import decrypt_data
 
 logger = logging.getLogger("TestBenchExecutor")
-
+# 自定义用例存储路径（相对于 backend/ 目录）
+_CUSTOM_CASES_FILE = os.path.join(os.path.dirname(__file__), "custom_cases.json")
+# 不允许删除的内置用例 ID 前缀（保护内置用例）
+_BUILTIN_CASE_PREFIXES = ("case_static_accuracy", "case_temp_step", "case_fault_diagnosis", "case_scenario_anti", "case_aes_tamper")
 
 class TestBenchExecutor:
     """
@@ -70,7 +75,8 @@ class TestBenchExecutor:
         # 用例注册中心
         # ==========================================
         self.registry = self._build_registry()
-
+        # 启动时加载自定义用例
+        self._load_custom_cases()
     # ==========================================
     # 依赖注入接口
     # 由 main.py 在初始化后调用
@@ -249,6 +255,247 @@ class TestBenchExecutor:
                 "executor": self._case_4_aes_tamper_resistance,
             },
         }
+    # ==========================================
+    # 自定义用例管理方法
+    # ==========================================
+    def _load_custom_cases(self):
+        """
+        从 custom_cases.json 加载自定义用例并注册到 registry
+        如果文件不存在或损坏，静默跳过，不影响内置用例
+        """
+        if not os.path.exists(_CUSTOM_CASES_FILE):
+            logger.info("[TestBench] 未找到自定义用例文件，跳过加载")
+            return
+
+        try:
+            with open(_CUSTOM_CASES_FILE, "r", encoding="utf-8") as f:
+                custom_cases = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"[TestBench] 自定义用例文件损坏或读取失败: {e}，跳过加载")
+            return
+
+        if not isinstance(custom_cases, dict):
+            logger.warning("[TestBench] 自定义用例格式错误，应为JSON对象")
+            return
+
+        count = 0
+        for case_id, case_meta in custom_cases.items():
+            # 避免与内置用例冲突
+            if case_id in self.registry:
+                logger.warning(f"[TestBench] 自定义用例 '{case_id}' 与内置用例ID冲突，跳过")
+                continue
+
+            # 检查必要字段
+            required_fields = ["name", "command", "params", "wait_time", "check_field", "expected_min", "expected_max"]
+            if not all(k in case_meta for k in required_fields):
+                logger.warning(f"[TestBench] 自定义用例 '{case_id}' 缺少必要字段，跳过")
+                continue
+
+            # 构建 executor，使用通用自定义用例执行器
+            self.registry[case_id] = {
+                "name":           case_meta["name"],
+                "type":           "custom",
+                "default_params": {
+                    "command":       case_meta["command"],
+                    "params":        case_meta["params"],
+                    "wait_time":     case_meta["wait_time"],
+                    "check_field":   case_meta["check_field"],
+                    "expected_min":  case_meta["expected_min"],
+                    "expected_max":  case_meta["expected_max"],
+                },
+                "executor": self._make_custom_executor(),
+            }
+            count += 1
+
+        logger.info(f"[TestBench] 已加载 {count} 个自定义用例")
+
+    def _make_custom_executor(self):
+        """
+        返回一个通用的自定义用例执行函数
+        通过闭包捕获执行逻辑，不在 _load_custom_cases 中为每个用例单独创建方法
+        """
+        def _custom_case_executor(params: dict):
+            # 从 params 中提取参数（已在调度引擎中合并）
+            command      = params["command"]
+            cmd_params   = params["params"]
+            wait_time    = params["wait_time"]
+            check_field  = params["check_field"]
+            expected_min = params["expected_min"]
+            expected_max = params["expected_max"]
+
+            case_name = f"自定义测试: {command}({cmd_params})"
+            self.current_case_name = case_name
+            self._log(f"========== 开始执行: {case_name} ==========")
+            start_time = time.time()
+            result = {
+                "case_id": "custom",  # 实际 case_id 会在 _run_suite 中覆盖
+                "case":    case_name,
+                "status":  "PASS",
+                "details": [],
+            }
+
+            try:
+                # 1. 下发指令
+                self._send_command(command, cmd_params)
+
+                # 2. 等待稳定
+                self._wait(wait_time)
+
+                # 3. 读取数据
+                data = self._get_latest()
+                actual_value = data.get(check_field)
+
+                if actual_value is None:
+                    result["status"] = "FAIL"
+                    result["details"].append(f"未找到字段 '{check_field}' 的数据")
+                else:
+                    # 4. 判定是否在预期范围内
+                    if expected_min <= actual_value <= expected_max:
+                        result["details"].append(
+                            f"{check_field}={actual_value}，在预期范围 [{expected_min}, {expected_max}] 内"
+                        )
+                    else:
+                        result["status"] = "FAIL"
+                        result["details"].append(
+                            f"{check_field}={actual_value}，超出预期范围 [{expected_min}, {expected_max}]"
+                        )
+
+            except InterruptedError as e:
+                result["status"] = "INTERRUPTED"
+                result["details"].append(str(e))
+            except Exception as e:
+                result["status"] = "ERROR"
+                result["details"].append(f"用例执行异常: {str(e)}")
+            finally:
+                self._send_command("clear_fault", {})
+                result["duration"] = round(time.time() - start_time, 2)
+                self.results.append(result)
+                self._log(
+                    f"========== 结束执行: {case_name} "
+                    f"[{result['status']}] =========="
+                )
+
+        return _custom_case_executor
+
+    def _save_custom_cases(self):
+        """
+        将当前 registry 中所有自定义用例（type == "custom"）写回 JSON 文件
+        """
+        custom_cases = {}
+        for case_id, meta in self.registry.items():
+            if meta.get("type") == "custom":
+                # 从 default_params 中提取原始定义
+                params = meta["default_params"]
+                custom_cases[case_id] = {
+                    "name":         meta["name"],
+                    "command":      params["command"],
+                    "params":       params["params"],
+                    "wait_time":    params["wait_time"],
+                    "check_field":  params["check_field"],
+                    "expected_min": params["expected_min"],
+                    "expected_max": params["expected_max"],
+                }
+
+        try:
+            with open(_CUSTOM_CASES_FILE, "w", encoding="utf-8") as f:
+                json.dump(custom_cases, f, ensure_ascii=False, indent=2)
+            logger.info(f"[TestBench] 已保存 {len(custom_cases)} 个自定义用例到文件")
+        except IOError as e:
+            logger.error(f"[TestBench] 保存自定义用例失败: {e}")
+
+    # ==========================================
+    # ★ 新增：公开接口（供前端调用）
+    # ==========================================
+    def add_custom_case(self, case_data: dict) -> dict:
+        """
+        添加一个自定义用例
+
+        :param case_data: 前端传入的用例定义
+            {
+                "name": "自定义高温测试",
+                "command": "override_value",
+                "params": {"target": "in_car_temp", "value": 90},
+                "wait_time": 10,
+                "check_field": "in_car_temp",
+                "expected_min": 85,
+                "expected_max": 95
+            }
+        :return: {"success": True/False, "case_id": "...", "message": "..."}
+        """
+        # 参数校验
+        required = ["name", "command", "params", "wait_time", "check_field", "expected_min", "expected_max"]
+        missing = [k for k in required if k not in case_data]
+        if missing:
+            return {"success": False, "message": f"缺少必要参数: {missing}"}
+
+        # 允许的指令类型
+        allowed_commands = ("override_value", "set_scenario", "inject_fault")
+        if case_data["command"] not in allowed_commands:
+            return {"success": False, "message": f"不支持的指令类型: {case_data['command']}，支持: {allowed_commands}"}
+
+        # 生成唯一 ID
+        import uuid
+        case_id = f"custom_{uuid.uuid4().hex[:8]}"
+
+        # 防止与内置用例冲突
+        while case_id in self.registry:
+            case_id = f"custom_{uuid.uuid4().hex[:8]}"
+
+        # 注册到 registry
+        self.registry[case_id] = {
+            "name":           case_data["name"],
+            "type":           "custom",
+            "default_params": {
+                "command":       case_data["command"],
+                "params":        case_data["params"],
+                "wait_time":     case_data["wait_time"],
+                "check_field":   case_data["check_field"],
+                "expected_min":  case_data["expected_min"],
+                "expected_max":  case_data["expected_max"],
+            },
+            "executor": self._make_custom_executor(),
+        }
+
+        # 持久化到文件
+        self._save_custom_cases()
+
+        logger.info(f"[TestBench] 已添加自定义用例: {case_id} ({case_data['name']})")
+        return {"success": True, "case_id": case_id, "message": "用例添加成功"}
+
+    def remove_custom_case(self, case_id: str) -> dict:
+        """
+        删除一个自定义用例（内置用例不允许删除）
+
+        :param case_id: 用例ID
+        :return: {"success": True/False, "message": "..."}
+        """
+        # 保护内置用例
+        if case_id in _BUILTIN_CASE_PREFIXES or case_id.startswith("case_"):
+            # 简单保护：所有 case_ 开头的可能是内置用例
+            # 更精确的判断可检查 registry 中的 type 是否为 "custom"
+            if case_id in self.registry and self.registry[case_id].get("type") != "custom":
+                return {"success": False, "message": "不能删除内置用例"}
+            elif case_id in self.registry and self.registry[case_id].get("type") == "custom":
+                pass  # 特殊 case_id 但是自定义类型，允许删除
+            else:
+                return {"success": False, "message": "该用例不存在"}
+
+        # 检查是否存在
+        if case_id not in self.registry:
+            return {"success": False, "message": "用例不存在"}
+
+        # 确认是自定义用例
+        if self.registry[case_id].get("type") != "custom":
+            return {"success": False, "message": "只能删除自定义用例"}
+
+        # 从 registry 移除
+        del self.registry[case_id]
+
+        # 持久化
+        self._save_custom_cases()
+
+        logger.info(f"[TestBench] 已删除自定义用例: {case_id}")
+        return {"success": True, "message": "用例删除成功"}
 
     # ==========================================
     # 测试用例实现
@@ -753,6 +1000,8 @@ class TestBenchExecutor:
             executor_func = case_meta["executor"]
             try:
                 executor_func(final_params)
+                if self.results and case_id.startswith("custom_"):
+                    self.results[-1]["case_id"] = case_id
             except Exception as e:
                 self._log(f"致命错误：执行 {case_id} 时发生未捕获异常: {e}")
 

@@ -604,7 +604,25 @@ def get_bench_report():
         "details":     executor.results,
     }
 
+@app.post("/api/bench/cases/custom", summary="新增自定义用例")
+def add_custom_case(case_data: dict):
+    """新增一个自定义测试用例"""
+    executor = app.state.executor
+    result = executor.add_custom_case(case_data)
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(status_code=400, detail=result["message"])
 
+@app.delete("/api/bench/cases/custom/{case_id}", summary="删除自定义用例")
+def remove_custom_case(case_id: str):
+    """删除一个自定义测试用例"""
+    executor = app.state.executor
+    result = executor.remove_custom_case(case_id)
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(status_code=400, detail=result["message"])
 # ==========================================
 # API路由：测试报告持久化
 # ==========================================
