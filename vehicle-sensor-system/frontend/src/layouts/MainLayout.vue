@@ -2,6 +2,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Monitor, Operation, DataAnalysis, Document, Fold, Expand } from '@element-plus/icons-vue'
 import { getNodes } from '@/api'
 
 const route = useRoute()
@@ -23,39 +24,36 @@ const menuItems = [
   {
     path: '/monitor',
     name: '实时监控',
-    icon: 'Monitor',
+    icon: Monitor,
     description: '传感器数据实时展示'
   },
   {
     path: '/bench',
     name: '测试执行',
-    icon: 'Operation',
+    icon: Operation,
     description: '自动化台架测试'
   },
   {
     path: '/history',
     name: '历史数据',
-    icon: 'DataAnalysis',
+    icon: DataAnalysis,
     description: '历史数据查询分析'
   },
   {
     path: '/reports',
     name: '历史报告',
-    icon: 'Document',
+    icon: Document,
     description: '测试报告管理'
   },
 ]
 
-// 当前激活的菜单
 const activePath = computed(() => route.path)
 
-// 当前页面标题
 const currentTitle = computed(() => {
   const item = menuItems.find(m => m.path === activePath.value)
   return item?.name || '系统'
 })
 
-// 切换菜单
 const handleMenuClick = (path) => {
   if (path !== activePath.value) {
     router.push(path)
@@ -98,7 +96,9 @@ onUnmounted(() => {
 
       <!-- Logo 区域 -->
       <div class="sidebar-logo">
-        <div class="logo-icon">⚡</div>
+        <div class="logo-icon">
+          <el-icon :size="24"><Monitor /></el-icon>
+        </div>
         <transition name="fade">
           <div v-if="!isCollapsed" class="logo-text">
             <div class="logo-title">车载传感器</div>
@@ -212,7 +212,6 @@ onUnmounted(() => {
 }
 
 .logo-icon {
-  font-size: 28px;
   color: var(--color-primary);
   flex-shrink: 0;
   width: 32px;

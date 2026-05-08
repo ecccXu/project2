@@ -2,6 +2,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, VideoPause, Download } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import {
   getNodes,
@@ -161,13 +162,10 @@ const submitAddCase = async () => {
     return
   }
 
-  // 根据指令类型构造 params
   let params = {}
   if (command === 'override_value') {
-    // target 是传感器字段，value 是目标值
     params = { target: target, value: Number(value) }
   } else if (command === 'set_scenario') {
-    // set_scenario 的 params 中 scenario 字段就是工况名，这里让用户输入
     params = { scenario: target }
   } else if (command === 'inject_fault') {
     params = { target: target, fault_type: value }
@@ -188,7 +186,7 @@ const submitAddCase = async () => {
     if (res.success) {
       ElMessage.success(`用例添加成功: ${res.case_id}`)
       addCaseDialogVisible.value = false
-      await fetchCases() // 刷新用例列表
+      await fetchCases()
     } else {
       ElMessage.error(res.message || '添加失败')
     }
@@ -218,19 +216,18 @@ const handleDeleteCase = async (caseItem) => {
       }
     )
   } catch {
-    return // 用户取消
+    return
   }
 
   try {
     const res = await removeCustomCase(caseItem.id)
     if (res.success) {
       ElMessage.success('用例已删除')
-      // 如果该用例被选中，从选中列表中移除
       const idx = selectedCaseIds.value.indexOf(caseItem.id)
       if (idx > -1) {
         selectedCaseIds.value.splice(idx, 1)
       }
-      await fetchCases() // 刷新用例列表
+      await fetchCases()
     } else {
       ElMessage.error(res.message || '删除失败')
     }
@@ -269,8 +266,6 @@ const startBench = async () => {
   })
 
   try {
-    // 注意：runBench 需要传 node_id 作为 query 参数
-    // 由于我们的 API 封装是把 payload 作为 body，这里需要特殊处理
     const res = await runBenchWithNode(benchNode.value, payload)
 
     if (res.status === 'error') {
@@ -286,7 +281,6 @@ const startBench = async () => {
   }
 }
 
-// 由于 bench/run 接口需要 node_id 作为 query 参数，单独封装
 const runBenchWithNode = (nodeId, cases) => {
   return request.post(`/api/bench/run?node_id=${nodeId}`, cases)
 }
@@ -327,7 +321,6 @@ const startPolling = () => {
         terminalRef.value.scrollTop = terminalRef.value.scrollHeight
       }
 
-      // 测试结束自动获取报告
       if (
         !benchStatus.value.is_running &&
         benchStatus.value.results_summary.length > 0
@@ -515,9 +508,9 @@ onUnmounted(() => {
               <span class="status-icon">
                 <span v-if="getCaseStatus(c.id) === 'PENDING'" class="dot pending" />
                 <span v-else-if="getCaseStatus(c.id) === 'RUNNING'" class="dot running" />
-                <span v-else-if="getCaseStatus(c.id) === 'PASS'" class="dot pass">✓</span>
-                <span v-else-if="getCaseStatus(c.id) === 'FAIL'" class="dot fail">✕</span>
-                <span v-else-if="getCaseStatus(c.id) === 'ERROR'" class="dot error">!</span>
+                <span v-else-if="getCaseStatus(c.id) === 'PASS'" class="dot pass">PASS</span>
+                <span v-else-if="getCaseStatus(c.id) === 'FAIL'" class="dot fail">FAIL</span>
+                <span v-else-if="getCaseStatus(c.id) === 'ERROR'" class="dot error">ERR</span>
               </span>
               <!-- 自定义用例删除按钮 -->
               <span
@@ -527,7 +520,7 @@ onUnmounted(() => {
                 @click.stop="handleDeleteCase(c)"
                 title="删除此用例"
               >
-                🗑
+                <el-icon><Delete /></el-icon>
               </span>
             </div>
           </div>
@@ -567,7 +560,8 @@ onUnmounted(() => {
             style="width: 100%; margin-top: 8px; margin-left: 0"
             size="large"
           >
-            ⏹ 强制停止
+            <el-icon style="margin-right: 4px"><VideoPause /></el-icon>
+            强制停止
           </el-button>
         </div>
       </div>
@@ -809,7 +803,8 @@ onUnmounted(() => {
       </div>
       <template #footer>
         <el-button type="success" @click="handleSaveReport">
-          💾 保存报告
+          <el-icon style="margin-right: 4px"><Download /></el-icon>
+          保存报告
         </el-button>
         <el-button @click="reportVisible = false">关闭</el-button>
       </template>
@@ -944,7 +939,7 @@ onUnmounted(() => {
 }
 
 .status-icon {
-  width: 24px;
+  width: 32px;
   text-align: center;
 }
 
@@ -963,24 +958,24 @@ onUnmounted(() => {
 }
 .dot.pass {
   color: var(--color-success);
-  font-size: var(--font-md);
-  background: transparent;
-  width: auto;
+  font-size: 11px;
   font-weight: var(--font-weight-bold);
+  width: auto;
+  background: transparent;
 }
 .dot.fail {
   color: var(--color-danger);
-  font-size: var(--font-md);
-  background: transparent;
-  width: auto;
+  font-size: 11px;
   font-weight: var(--font-weight-bold);
+  width: auto;
+  background: transparent;
 }
 .dot.error {
   color: var(--color-warning);
-  font-size: var(--font-md);
-  background: transparent;
-  width: auto;
+  font-size: 11px;
   font-weight: var(--font-weight-bold);
+  width: auto;
+  background: transparent;
 }
 
 /* 操作按钮区域 */

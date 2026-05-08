@@ -1,6 +1,7 @@
 <!-- frontend/src/views/MonitorView.vue -->
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { WarningFilled } from '@element-plus/icons-vue'
 import { getNodes, getNodeLatest } from '@/api'
 
 // ==========================================
@@ -20,7 +21,6 @@ const fetchNodes = async () => {
     const res = await getNodes()
     availableNodes.value = res.nodes || []
 
-    // 默认选中第一个节点
     if (availableNodes.value.length > 0 && !selectedNode.value) {
       selectedNode.value = availableNodes.value[0].node_id
     }
@@ -90,11 +90,15 @@ onUnmounted(() => {
     <!-- 异常告警横幅 -->
     <el-alert
       v-if="isAbnormal"
-      :title="`⚠️ 数据异常告警：${abnormalMsg}`"
       type="error"
       :closable="false"
       style="margin-bottom: 16px"
-    />
+    >
+      <template #title>
+        <el-icon style="margin-right: 6px"><WarningFilled /></el-icon>
+        <span>数据异常告警：{{ abnormalMsg }}</span>
+      </template>
+    </el-alert>
 
     <!-- 数据卡片网格 -->
     <div class="data-cards">
@@ -165,7 +169,7 @@ onUnmounted(() => {
           class="card-value"
           :class="monitorData.is_abnormal ? 'fault' : 'normal'"
         >
-          {{ monitorData.is_abnormal ? '⚠️ 超标' : '✅ 正常' }}
+          {{ monitorData.is_abnormal ? '超标' : '正常' }}
         </div>
       </div>
     </div>
