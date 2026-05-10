@@ -1,6 +1,6 @@
 <!-- frontend/src/views/ReportView.vue -->
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getNodes, getReportList, getReportDetail } from '@/api'
@@ -15,8 +15,9 @@ const reportListTotal = ref(0)
 const reportListPage = ref(1)
 const reportListLoading = ref(false)
 
-const detailVisible = ref(false)
+const selectedReportId = ref(null)
 const detailReport = ref(null)
+const detailLoading = ref(false)
 const detailChartRef = ref(null)
 const detailChartInst = ref(null)
 
@@ -44,6 +45,12 @@ const fetchReportList = async () => {
     const res = await getReportList(params)
     reportList.value = res.reports || []
     reportListTotal.value = res.total || 0
+
+    // 默认选中第一条
+    if (reportList.value.length > 0 && !selectedReportId.value) {
+      selectedReportId.value = reportList.value[0].id
+      fetchDetail(reportList.value[0].id)
+    }
   } catch (e) {
     ElMessage.error('报告列表获取失败')
   } finally {
@@ -51,16 +58,25 @@ const fetchReportList = async () => {
   }
 }
 
-const viewReportDetail = async (reportId) => {
+const fetchDetail = async (reportId) => {
+  detailLoading.value = true
+  detailReport.value = null
   try {
     const res = await getReportDetail(reportId)
     detailReport.value = res.report
-    detailVisible.value = true
     await nextTick()
     initDetailChart()
   } catch (e) {
     ElMessage.error('报告详情获取失败')
+  } finally {
+    detailLoading.value = false
   }
+}
+
+const handleSelectReport = (reportId) => {
+  if (selectedReportId.value === reportId) return
+  selectedReportId.value = reportId
+  fetchDetail(reportId)
 }
 
 const initDetailChart = () => {
@@ -137,156 +153,143 @@ onUnmounted(() => {
 
       <div class="toolbar-actions">
         <el-button type="primary" @click="fetchReportList">
-          <el-icon><Search /></el-icon>
           查询
         </el-button>
       </div>
     </div>
 
-    <!-- 报告列表 -->
-    <div class="table-card">
-      <el-table
-        :data="reportList"
-        v-loading="reportListLoading"
-        stripe
-        border
-        style="width: 100%"
-      >
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="report_name" label="报告名称" />
-        <el-table-column prop="node_id" label="节点" width="140" />
-        <el-table-column prop="total_cases" label="总用例" width="80" align="center" />
+    <!-- 主体：左右分栏 -->
+    <div class="report-body">
 
-        <el-table-column prop="pass_count" label="通过" width="80" align="center">
-          <template #default="{ row }">
-            <span class="count-pass">{{ row.pass_count }}</span>
-          </template>
-        </el-table-column>
+      <!-- 左侧：报告列表 -->
+      <div class="report-left">
+        <div class="table-card">
+          <el-table
+            :data="reportList"
+            v-loading="reportListLoading"
+            stripe
+            border
+            style="width: 100%"
+            highlight-current-row
+            @row-click="(row) => handleSelectReport(row.id)"
+          >
+            <el-table-column prop="id" label="ID" width="60" />
+            <el-table-column prop="report_name" label="报告名称" show-overflow-tooltip />
+            <el-table-column prop="node_id" label="节点" width="110" />
+            <el-table-column prop="pass_rate" label="通过率" width="85" align="center">
+              <template #default="{ row }">
+                <el-tag
+                  :type="row.pass_rate >= 80 ? 'success' : 'danger'"
+                  size="small"
+                >
+                  {{ row.pass_rate }}%
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="create_time" label="创建时间" width="160" />
+          </el-table>
 
-        <el-table-column prop="fail_count" label="失败" width="80" align="center">
-          <template #default="{ row }">
-            <span class="count-fail">{{ row.fail_count }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="pass_rate" label="通过率" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag
-              :type="row.pass_rate >= 80 ? 'success' : 'danger'"
-              size="small"
-            >
-              {{ row.pass_rate }}%
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="create_time" label="创建时间" width="170" />
-
-        <el-table-column label="操作" width="100" align="center">
-          <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="viewReportDetail(row.id)"
-            >
-              查看
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 分页 -->
-      <div class="pagination">
-        <el-pagination
-          v-model:current-page="reportListPage"
-          :page-size="10"
-          :total="reportListTotal"
-          layout="total, prev, pager, next"
-          @current-change="(p) => { reportListPage = p; fetchReportList() }"
-        />
+          <!-- 分页 -->
+          <div class="pagination">
+            <el-pagination
+              v-model:current-page="reportListPage"
+              :page-size="10"
+              :total="reportListTotal"
+              layout="total, prev, pager, next"
+              small
+              @current-change="(p) => { reportListPage = p; fetchReportList() }"
+            />
+          </div>
+        </div>
       </div>
-    </div>
 
-    <!-- 报告详情弹窗 -->
-    <el-dialog
-      v-model="detailVisible"
-      :title="`报告详情：${detailReport?.report_name}`"
-      width="80%"
-    >
-      <div v-if="detailReport">
-        <el-row :gutter="24">
-          <el-col :span="8">
-            <div ref="detailChartRef" style="height: 240px" />
-          </el-col>
-          <el-col :span="16">
+      <!-- 右侧：报告详情 -->
+      <div class="report-right">
+        <div class="detail-card" v-loading="detailLoading">
+          <template v-if="detailReport">
             <el-descriptions
               :column="3"
               border
               size="small"
               style="margin-bottom: 16px"
             >
-              <el-descriptions-item label="节点">
+              <el-descriptions-item label="报告名称">
+                {{ detailReport.report_name }}
+              </el-descriptions-item>
+              <el-descriptions-item label="目标节点">
                 {{ detailReport.node_id }}
               </el-descriptions-item>
               <el-descriptions-item label="通过率">
-                {{ detailReport.pass_rate }}%
-              </el-descriptions-item>
-              <el-descriptions-item label="创建时间">
-                {{ detailReport.create_time }}
+                <el-tag
+                  :type="detailReport.pass_rate >= 80 ? 'success' : 'danger'"
+                  size="small"
+                >
+                  {{ detailReport.pass_rate }}%
+                </el-tag>
               </el-descriptions-item>
             </el-descriptions>
 
-            <el-table
-              :data="detailReport.details"
-              stripe
-              border
-              max-height="240"
-              size="small"
-            >
-              <el-table-column prop="case" label="用例名称" min-width="160" />
-              <el-table-column prop="status" label="结果" width="80">
-                <template #default="{ row }">
-                  <el-tag
-                    :type="row.status === 'PASS' ? 'success' : 'danger'"
-                    size="small"
+            <el-row :gutter="24">
+              <el-col :span="8">
+                <div ref="detailChartRef" style="height: 240px" />
+              </el-col>
+              <el-col :span="16">
+                <el-table
+                  :data="detailReport.details"
+                  stripe
+                  border
+                  max-height="240"
+                  size="small"
+                >
+                  <el-table-column prop="case" label="用例名称" min-width="160" show-overflow-tooltip />
+                  <el-table-column prop="status" label="结果" width="80">
+                    <template #default="{ row }">
+                      <el-tag
+                        :type="row.status === 'PASS' ? 'success' : 'danger'"
+                        size="small"
+                      >
+                        {{ row.status }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="duration" label="耗时(s)" width="90" />
+                  <el-table-column
+                    prop="details"
+                    label="详情"
+                    show-overflow-tooltip
                   >
-                    {{ row.status }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="duration" label="耗时(s)" width="90" />
-              <el-table-column
-                prop="details"
-                label="详情"
-                show-overflow-tooltip
-              >
-                <template #default="{ row }">
-                  {{ Array.isArray(row.details) ? row.details.join(' | ') : row.details }}
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-col>
-        </el-row>
+                    <template #default="{ row }">
+                      {{ Array.isArray(row.details) ? row.details.join(' | ') : row.details }}
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </el-col>
+            </el-row>
+          </template>
+
+          <div v-else class="detail-empty">
+            请从左侧列表选择一份报告查看详情
+          </div>
+        </div>
       </div>
 
-      <template #footer>
-        <el-button @click="detailVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
+    </div>
   </div>
 </template>
 
 <style scoped>
 .report-view {
   width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 工具栏 */
 .toolbar {
   display: flex;
   align-items: center;
-  margin-bottom: var(--spacing-5);
+  margin-bottom: var(--spacing-4);
   flex-wrap: wrap;
   gap: var(--spacing-2);
   padding: var(--spacing-4);
@@ -294,6 +297,7 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
 }
 
 .toolbar-label {
@@ -308,33 +312,57 @@ onUnmounted(() => {
   gap: var(--spacing-2);
 }
 
-/* 表格卡片 */
+/* 主体：左右分栏 */
+.report-body {
+  flex: 1;
+  display: flex;
+  gap: var(--spacing-4);
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 左侧列表 */
+.report-left {
+  width: 420px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
 .table-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-4);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 右侧详情 */
+.report-right {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.detail-card {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   padding: var(--spacing-5);
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-sm);
+  min-height: 400px;
 }
 
-/* 数字高亮 */
-.count-pass {
-  color: var(--color-success);
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-md);
-}
-
-.count-fail {
-  color: var(--color-danger);
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-md);
+.detail-empty {
+  text-align: center;
+  color: var(--text-disabled);
+  padding-top: 120px;
+  font-size: var(--font-base);
 }
 
 /* 分页 */
 .pagination {
   display: flex;
   justify-content: flex-end;
-  margin-top: var(--spacing-4);
+  margin-top: var(--spacing-3);
   padding-top: var(--spacing-3);
   border-top: 1px solid var(--border-light);
 }
