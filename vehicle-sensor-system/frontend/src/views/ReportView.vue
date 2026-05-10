@@ -1,9 +1,10 @@
 <!-- frontend/src/views/ReportView.vue -->
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getNodes, getReportList, getReportDetail } from '@/api'
+import request from '@/api/request'
 
 // ==========================================
 // 状态
@@ -20,6 +21,13 @@ const detailReport = ref(null)
 const detailLoading = ref(false)
 const detailChartRef = ref(null)
 const detailChartInst = ref(null)
+
+// AI 分析状态
+const aiLoading = ref(false)
+const aiResult = ref('')
+const aiEditing = ref(false)
+const aiEditText = ref('')
+const aiSaved = ref(false)
 
 // ==========================================
 // 数据获取
@@ -46,7 +54,6 @@ const fetchReportList = async () => {
     reportList.value = res.reports || []
     reportListTotal.value = res.total || 0
 
-    // 默认选中第一条
     if (reportList.value.length > 0 && !selectedReportId.value) {
       selectedReportId.value = reportList.value[0].id
       fetchDetail(reportList.value[0].id)
@@ -61,9 +68,21 @@ const fetchReportList = async () => {
 const fetchDetail = async (reportId) => {
   detailLoading.value = true
   detailReport.value = null
+  aiResult.value = ''
+  aiSaved.value = false
+  aiEditing.value = false
   try {
     const res = await getReportDetail(reportId)
     detailReport.value = res.report
+    if (detailReport.value.details) {
+      const aiItem = detailReport.value.details.find(
+        d => d.case === '[AI] 智能分析结果'
+      )
+      if (aiItem && aiItem.details && aiItem.details.length > 0) {
+        aiResult.value = aiItem.details[0]
+        aiSaved.value = true
+      }
+    }
     await nextTick()
     initDetailChart()
   } catch (e) {
@@ -112,6 +131,49 @@ const initDetailChart = () => {
       ],
     }],
   })
+}
+
+// ==========================================
+// AI 分析
+// ==========================================
+const fetchAIAnalysis = async () => {
+  if (!selectedReportId.value) return
+  aiLoading.value = true
+  try {
+    const res = await request.post(`/api/reports/${selectedReportId.value}/ai-analyze`)
+    aiResult.value = res.analysis
+    aiSaved.value = false
+  } catch (e) {
+    ElMessage.error('AI分析失败，请检查后端和API Key配置')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+const startEditAI = () => {
+  aiEditText.value = aiResult.value
+  aiEditing.value = true
+}
+
+const cancelEditAI = () => {
+  aiEditText.value = ''
+  aiEditing.value = false
+}
+
+const submitEditAI = async () => {
+  if (!selectedReportId.value) return
+  try {
+    await request.put(`/api/reports/${selectedReportId.value}/ai-analysis`, {
+      analysis: aiEditText.value
+    })
+    aiResult.value = aiEditText.value
+    aiSaved.value = true
+    aiEditing.value = false
+    ElMessage.success('AI分析结果已保存')
+    fetchDetail(selectedReportId.value)
+  } catch (e) {
+    ElMessage.error('保存失败')
+  }
 }
 
 // ==========================================
@@ -174,7 +236,11 @@ onUnmounted(() => {
             @row-click="(row) => handleSelectReport(row.id)"
           >
             <el-table-column prop="id" label="ID" width="60" />
-            <el-table-column prop="report_name" label="报告名称" show-overflow-tooltip />
+            <el-table-column prop="report_name" label="报告名称" min-width="160">
+              <template #default="{ row }">
+                <span class="text-wrap">{{ row.report_name }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="node_id" label="节点" width="110" />
             <el-table-column prop="pass_rate" label="通过率" width="85" align="center">
               <template #default="{ row }">
@@ -189,7 +255,6 @@ onUnmounted(() => {
             <el-table-column prop="create_time" label="创建时间" width="160" />
           </el-table>
 
-          <!-- 分页 -->
           <div class="pagination">
             <el-pagination
               v-model:current-page="reportListPage"
@@ -203,10 +268,12 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 右侧：报告详情 -->
+      <!-- 右侧：报告详情 + AI分析 -->
       <div class="report-right">
         <div class="detail-card" v-loading="detailLoading">
           <template v-if="detailReport">
+
+            <!-- 基本信息 -->
             <el-descriptions
               :column="3"
               border
@@ -229,16 +296,16 @@ onUnmounted(() => {
               </el-descriptions-item>
             </el-descriptions>
 
+            <!-- 饼图 + 用例表格 -->
             <el-row :gutter="24">
               <el-col :span="8">
                 <div ref="detailChartRef" style="height: 240px" />
               </el-col>
               <el-col :span="16">
                 <el-table
-                  :data="detailReport.details"
+                  :data="detailReport.details?.filter(d => d.case !== '[AI] 智能分析结果')"
                   stripe
                   border
-                  max-height="240"
                   size="small"
                 >
                   <el-table-column prop="case" label="用例名称" min-width="160" show-overflow-tooltip />
@@ -256,15 +323,77 @@ onUnmounted(() => {
                   <el-table-column
                     prop="details"
                     label="详情"
-                    show-overflow-tooltip
                   >
                     <template #default="{ row }">
-                      {{ Array.isArray(row.details) ? row.details.join(' | ') : row.details }}
+                      <div class="detail-cell">
+                        {{ Array.isArray(row.details) ? row.details.join(' | ') : row.details }}
+                      </div>
                     </template>
                   </el-table-column>
                 </el-table>
               </el-col>
             </el-row>
+
+            <!-- AI分析区域 -->
+            <div style="margin-top: 20px; border-top: 1px solid var(--border-light); padding-top: 16px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <span style="font-weight: 600; color: var(--text-primary);">AI 分析结果</span>
+                <div>
+                  <template v-if="!aiEditing && aiResult">
+                    <el-button size="small" text type="primary" @click="startEditAI">
+                      编辑
+                    </el-button>
+                  </template>
+                  <el-button
+                    v-if="!aiResult"
+                    type="primary"
+                    size="small"
+                    :loading="aiLoading"
+                    @click="fetchAIAnalysis"
+                  >
+                    AI 分析
+                  </el-button>
+                  <el-button
+                    v-else
+                    size="small"
+                    :loading="aiLoading"
+                    @click="fetchAIAnalysis"
+                  >
+                    重新分析
+                  </el-button>
+                </div>
+              </div>
+
+              <!-- 编辑模式 -->
+              <div v-if="aiEditing" style="margin-bottom: 12px;">
+                <el-input
+                  v-model="aiEditText"
+                  type="textarea"
+                  :rows="8"
+                  placeholder="编辑AI分析内容..."
+                />
+                <div style="margin-top: 8px; display: flex; gap: 8px;">
+                  <el-button size="small" type="primary" @click="submitEditAI">提交修改</el-button>
+                  <el-button size="small" @click="cancelEditAI">取消</el-button>
+                </div>
+              </div>
+
+              <!-- 查看模式 -->
+              <div
+                v-else-if="aiResult"
+                class="ai-content"
+              >
+                {{ aiResult }}
+              </div>
+
+              <div
+                v-else
+                style="color: var(--text-disabled); text-align: center; padding: 24px;"
+              >
+                点击"AI 分析"按钮生成智能分析报告
+              </div>
+            </div>
+
           </template>
 
           <div v-else class="detail-empty">
@@ -272,7 +401,6 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-
     </div>
   </div>
 </template>
@@ -285,7 +413,6 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-/* 工具栏 */
 .toolbar {
   display: flex;
   align-items: center;
@@ -312,7 +439,6 @@ onUnmounted(() => {
   gap: var(--spacing-2);
 }
 
-/* 主体：左右分栏 */
 .report-body {
   flex: 1;
   display: flex;
@@ -321,7 +447,6 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-/* 左侧列表 */
 .report-left {
   width: 420px;
   flex-shrink: 0;
@@ -336,7 +461,6 @@ onUnmounted(() => {
   box-shadow: var(--shadow-sm);
 }
 
-/* 右侧详情 */
 .report-right {
   flex: 1;
   overflow-y: auto;
@@ -358,12 +482,35 @@ onUnmounted(() => {
   font-size: var(--font-base);
 }
 
-/* 分页 */
 .pagination {
   display: flex;
   justify-content: flex-end;
   margin-top: var(--spacing-3);
   padding-top: var(--spacing-3);
   border-top: 1px solid var(--border-light);
+}
+
+/* 文本自动换行 */
+.text-wrap {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* 详情单元格 */
+.detail-cell {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.6;
+}
+
+/* AI 分析内容 */
+.ai-content {
+  background: var(--bg-page);
+  padding: 12px;
+  border-radius: 8px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  font-size: var(--font-sm);
+  word-break: break-word;
 }
 </style>

@@ -741,7 +741,6 @@ def save_report(db: Session = Depends(get_db)):
         "report":    report.to_dict(),
     }
 
-
 @app.get("/api/reports/list", summary="获取历史测试报告列表")
 def get_reports_list(
     node_id: Optional[str] = Query(None, description="按节点筛选"),
@@ -769,7 +768,6 @@ def get_reports_list(
         "reports": [r.to_dict() for r in reports],
     }
 
-
 @app.get("/api/reports/{report_id}", summary="获取指定报告详情")
 def get_report_detail(report_id: int, db: Session = Depends(get_db)):
     """获取指定报告的完整详情，包含每个用例的结果"""
@@ -778,7 +776,85 @@ def get_report_detail(report_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"报告 id={report_id} 不存在")
     return {"report": report.to_detail_dict()}
 
+@app.post("/api/reports/{report_id}/ai-analyze", summary="AI分析历史报告")
+async def ai_analyze_report(report_id: int, db: Session = Depends(get_db)):
+    """对指定历史报告进行AI分析"""
+    report = db.query(TestReport).filter(TestReport.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail=f"报告 id={report_id} 不存在")
 
+    details = report.get_details_list()
+    if not details:
+        raise HTTPException(status_code=400, detail="该报告无用例数据可供分析")
+
+    total = len(details)
+    pass_count = sum(1 for r in details if r.get("status") == "PASS")
+    fail_count = sum(1 for r in details if r.get("status") == "FAIL")
+    error_count = total - pass_count - fail_count
+
+    prompt = f"""你是一个车载传感器测试系统的分析助手。以下是一份历史测试报告的数据：
+
+总用例数: {total}，通过: {pass_count}，失败: {fail_count}，错误: {error_count}，通过率: {round(pass_count/total*100,1)}%
+
+各用例详情：
+{json.dumps(details, ensure_ascii=False, indent=2)}
+
+请用中文输出以下内容：
+1. 测试结果总体评价（2-3句话）
+2. 如果存在失败或错误，分析可能的原因
+3. 给出传感器性能的综合评分（满分10分）
+4. 对下一步测试的建议"""
+
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        api_key = "sk-e4651e4b5eb64eb7bb251941487e16bd"  # 硬编码备用
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            resp = await client.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "deepseek-chat",
+                    "messages": [
+                        {"role": "system", "content": "你是专业的车载传感器测试分析专家，输出简洁、专业、直接。"},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 800
+                }
+            )
+            result = resp.json()
+            if "choices" not in result:
+                raise HTTPException(status_code=500, detail=f"DeepSeek API 错误: {result}")
+            return {"analysis": result["choices"][0]["message"]["content"]}
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="AI 分析超时，请重试")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"AI 分析请求失败: {str(e)}")
+
+@app.put("/api/reports/{report_id}/ai-analysis", summary="保存AI分析结果")
+def save_ai_analysis(report_id: int, data: dict, db: Session = Depends(get_db)):
+    """将AI分析结果保存到报告记录中"""
+    report = db.query(TestReport).filter(TestReport.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail=f"报告 id={report_id} 不存在")
+
+    analysis_text = data.get("analysis", "")
+    details_list = report.get_details_list()
+    details_list.append({
+        "case": "[AI] 智能分析结果",
+        "status": "INFO",
+        "duration": 0,
+        "details": [analysis_text]
+    })
+    report.details = json.dumps(details_list, ensure_ascii=False)
+    db.commit()
+
+    return {"message": "AI分析结果已保存", "report_id": report_id}
 # ==========================================
 # 根路由
 # ==========================================
