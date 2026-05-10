@@ -836,15 +836,19 @@ async def ai_analyze_report(report_id: int, db: Session = Depends(get_db)):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"AI 分析请求失败: {str(e)}")
 
+
 @app.put("/api/reports/{report_id}/ai-analysis", summary="保存AI分析结果")
 def save_ai_analysis(report_id: int, data: dict, db: Session = Depends(get_db)):
-    """将AI分析结果保存到报告记录中"""
+    """将AI分析结果保存到报告记录中（覆盖式保存）"""
     report = db.query(TestReport).filter(TestReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail=f"报告 id={report_id} 不存在")
 
     analysis_text = data.get("analysis", "")
     details_list = report.get_details_list()
+    # 先删除已有的AI分析记录（避免重复）
+    details_list = [d for d in details_list if d.get("case") != "[AI] 智能分析结果"]
+    # 追加新的AI分析结果
     details_list.append({
         "case": "[AI] 智能分析结果",
         "status": "INFO",
@@ -853,7 +857,6 @@ def save_ai_analysis(report_id: int, data: dict, db: Session = Depends(get_db)):
     })
     report.details = json.dumps(details_list, ensure_ascii=False)
     db.commit()
-
     return {"message": "AI分析结果已保存", "report_id": report_id}
 # ==========================================
 # 根路由

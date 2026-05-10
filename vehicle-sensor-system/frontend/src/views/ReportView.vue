@@ -176,6 +176,20 @@ const submitEditAI = async () => {
   }
 }
 
+const saveAIResult = async () => {
+  if (!selectedReportId.value || !aiResult.value) return
+  try {
+    await request.put(`/api/reports/${selectedReportId.value}/ai-analysis`, {
+      analysis: aiResult.value
+    })
+    aiSaved.value = true
+    ElMessage.success('AI分析结果已保存')
+    fetchDetail(selectedReportId.value)
+  } catch (e) {
+    ElMessage.error('保存失败')
+  }
+}
+
 // ==========================================
 // 生命周期
 // ==========================================
@@ -338,8 +352,11 @@ onUnmounted(() => {
             <div style="margin-top: 20px; border-top: 1px solid var(--border-light); padding-top: 16px;">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                 <span style="font-weight: 600; color: var(--text-primary);">AI 分析结果</span>
-                <div>
+                                <div style="display: flex; gap: 8px;">
                   <template v-if="!aiEditing && aiResult">
+                    <el-button size="small" type="success" @click="saveAIResult" :disabled="aiSaved">
+                      {{ aiSaved ? '已保存' : '保存' }}
+                    </el-button>
                     <el-button size="small" text type="primary" @click="startEditAI">
                       编辑
                     </el-button>
