@@ -6,6 +6,7 @@ import logging
 import sys
 import os
 import time
+import httpx
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -206,10 +207,14 @@ def on_message(client, userdata, msg):
     try:
         # 2. AES-CBC解密
         encrypted_payload = msg.payload.decode('utf-8')
-        decrypted_json    = decrypt_data(encrypted_payload)
-        if decrypted_json is None:
-            logger.error(f"[{node_id}] 解密失败，丢弃数据包（可能被篡改）")
-            return
+        # 支持临时明文测试 (格式: "PLAIN:{json}")
+        if encrypted_payload.startswith("PLAIN:"):
+            decrypted_json = encrypted_payload[6:]
+        else:
+            decrypted_json = decrypt_data(encrypted_payload)
+            if decrypted_json is None:
+                logger.error(f"[{node_id}] 解密失败，丢弃数据包（可能被篡改）")
+                return
 
         # 3. JSON解析
         data        = json.loads(decrypted_json)
@@ -603,6 +608,74 @@ def get_bench_report():
         "pass_rate":   round(pass_count / total * 100, 1) if total > 0 else 0,
         "details":     executor.results,
     }
+
+@app.post("/api/bench/ai-analyze", summary="AI分析测试报告")
+async def ai_analyze_report():
+    """将本次测试报告发送给DeepSeek，返回分析摘要"""
+    executor = app.state.executor
+    if executor.is_running:
+        raise HTTPException(status_code=400, detail="测试尚未结束")
+    if not executor.results:
+        raise HTTPException(status_code=404, detail="暂无测试结果")
+
+    # 提取报告摘要，避免 token 过多
+    summary = []
+    for r in executor.results:
+        summary.append({
+            "case": r["case"],
+            "status": r["status"],
+            "duration": r.get("duration", 0),
+            "details": r.get("details", [])[:3]
+        })
+
+    total = len(summary)
+    pass_count = sum(1 for r in summary if r["status"] == "PASS")
+    fail_count = sum(1 for r in summary if r["status"] == "FAIL")
+    error_count = sum(1 for r in summary if r["status"] not in ("PASS", "FAIL"))
+
+    prompt = f"""你是一个车载传感器测试系统的分析助手。以下是本次台架测试的结果：
+
+总用例数: {total}，通过: {pass_count}，失败: {fail_count}，错误: {error_count}，通过率: {round(pass_count/total*100, 1)}%
+
+各用例详情：
+{json.dumps(summary, ensure_ascii=False, indent=2)}
+
+请用中文输出以下内容：
+1. 测试结果总体评价（2-3句话）
+2. 如果存在失败或错误，分析可能的原因
+3. 给出传感器性能的综合评分（满分10分）
+4. 对下一步测试的建议"""
+
+    api_key = "sk-e4651e4b5eb64eb7bb251941487e16bd"
+    if not api_key:
+        raise HTTPException(status_code=500, detail="未配置 DEEPSEEK_API_KEY 环境变量")
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            resp = await client.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "deepseek-chat",
+                    "messages": [
+                        {"role": "system", "content": "你是专业的车载传感器测试分析专家，输出简洁、专业、直接。"},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 800
+                }
+            )
+            result = resp.json()
+            if "choices" not in result:
+                raise HTTPException(status_code=500, detail=f"DeepSeek API 错误: {result}")
+            return {"analysis": result["choices"][0]["message"]["content"]}
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="AI 分析超时，请重试")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"AI 分析请求失败: {str(e)}")
 
 @app.post("/api/bench/cases/custom", summary="新增自定义用例")
 def add_custom_case(case_data: dict):

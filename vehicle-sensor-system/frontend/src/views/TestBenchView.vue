@@ -12,6 +12,7 @@ import {
   getBenchStatus,
   getBenchLogs,
   getBenchReport,
+  analyzeBench,
   saveReport,
   addCustomCase,
   removeCustomCase,
@@ -81,7 +82,11 @@ const reportVisible = ref(false)
 const reportData = ref(null)
 const reportChartRef = ref(null)
 const reportChartInst = ref(null)
-
+// ==========================================
+// AI 分析
+// ==========================================
+const aiLoading = ref(false)
+const aiResult = ref('')
 // ==========================================
 // 节点列表获取
 // ==========================================
@@ -366,6 +371,20 @@ const handleSaveReport = async () => {
     ElMessage.success(`报告已保存，ID: ${res.report_id}`)
   } catch (e) {
     ElMessage.error('保存失败，请确认测试已结束')
+  }
+}
+
+const fetchAIAnalysis = async () => {
+  aiLoading.value = true
+  aiResult.value = ''
+  try {
+    const res = await analyzeBench()
+    aiResult.value = res.analysis
+  } catch (e) {
+    ElMessage.error('AI 分析失败，请检查后端和 API Key 配置')
+    console.error('AI 分析错误:', e)
+  } finally {
+    aiLoading.value = false
   }
 }
 
@@ -800,13 +819,28 @@ onUnmounted(() => {
             </el-table>
           </el-col>
         </el-row>
+
+        <!-- AI 分析结果 -->
+        <div v-if="aiResult" style="margin-top: 20px; padding: 16px; background: #f8f9fb; border-radius: 8px; border: 1px solid var(--border-light);">
+          <div style="font-weight: var(--font-weight-semibold); margin-bottom: 12px; color: var(--text-primary);">
+            AI 分析结果
+          </div>
+          <div style="white-space: pre-wrap; line-height: 1.8; font-size: var(--font-sm); color: var(--text-secondary);">{{ aiResult }}</div>
+        </div>
       </div>
       <template #footer>
-        <el-button type="success" @click="handleSaveReport">
-          <el-icon style="margin-right: 4px"><Download /></el-icon>
-          保存报告
-        </el-button>
-        <el-button @click="reportVisible = false">关闭</el-button>
+        <div style="display: flex; justify-content: space-between; width: 100%;">
+          <el-button type="warning" @click="fetchAIAnalysis" :loading="aiLoading" plain>
+            AI 分析
+          </el-button>
+          <div>
+            <el-button type="success" @click="handleSaveReport">
+              <el-icon style="margin-right: 4px"><Download /></el-icon>
+              保存报告
+            </el-button>
+            <el-button @click="reportVisible = false">关闭</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 

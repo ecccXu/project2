@@ -61,3 +61,10 @@ export function addCustomCase(caseData) {
 export function removeCustomCase(caseId) {
   return request.delete(`/api/bench/cases/custom/${caseId}`)
 }
+
+/**
+ * AI 分析测试报告
+ */
+export function analyzeBench() {
+  return request.post('/api/bench/ai-analyze')
+}
