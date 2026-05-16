@@ -113,6 +113,7 @@ const fetchCases = async () => {
       caseTemplates.value = res.cases.map(c => ({
         ...c,
         current_params: { ...c.default_params },
+        params_labels: c.params_labels || {},
       }))
     }
   } catch (e) {
@@ -139,6 +140,13 @@ const saveParams = () => {
     editingCase.value.current_params = converted
   }
   drawerVisible.value = false
+}
+
+const getParamLabel = (key) => {
+  if (editingCase.value?.params_labels?.[key]) {
+    return editingCase.value.params_labels[key]
+  }
+  return key
 }
 // ==========================================
 // 打开新增用例弹窗
@@ -555,10 +563,33 @@ const formatLog = (log) => {
 // ==========================================
 let nodesTimer = null
 
-onMounted(() => {
+const restoreBenchState = async () => {
+  try {
+    const [statusRes, logRes] = await Promise.all([
+      getBenchStatus(),
+      getBenchLogs(),
+    ])
+    
+    benchStatus.value = statusRes
+    terminalLogs.value = logRes.logs || []
+
+    if (statusRes.is_running) {
+      ElMessage.info('检测到测试正在进行，正在恢复监控...')
+      startPolling()
+    } else if (statusRes.results_summary?.length > 0) {
+      fetchFinalReport()
+    }
+  } catch (e) {
+    console.error('恢复测试状态失败', e)
+  }
+}
+
+onMounted(async () => {
   fetchNodes()
   fetchCases()
   nodesTimer = setInterval(fetchNodes, 5000)
+  
+  await restoreBenchState()
 })
 
 onUnmounted(() => {
@@ -722,7 +753,7 @@ onUnmounted(() => {
           <el-form-item
             v-for="(value, key) in editingParams"
             :key="key"
-            :label="key"
+            :label="getParamLabel(key)"
           >
             <el-input
               v-model="editingParams[key]"

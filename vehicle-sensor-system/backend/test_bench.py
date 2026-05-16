@@ -194,6 +194,13 @@ class TestBenchExecutor:
                     "expected_temp":    25.0,  # 基准期望温度（℃）
                     "max_bias":          2.0,  # 允许的最大偏差（℃）
                 },
+                "params_labels": {
+                    "stable_duration": "稳定采集时长(秒)",
+                    "check_samples": "采样数量",
+                    "max_std_dev": "最大标准差(℃)",
+                    "expected_temp": "期望温度(℃)",
+                    "max_bias": "最大偏差(℃)",
+                },
                 "executor": self._case_0_static_accuracy,
             },
 
@@ -210,6 +217,12 @@ class TestBenchExecutor:
                     "timeout":        15.0,   # 响应超时时间（秒）
                     "max_overshoot":   2.0,   # 允许的最大超调量（℃）
                 },
+                "params_labels": {
+                    "base_temp": "基准温度(℃)",
+                    "target_temp": "目标温度(℃)",
+                    "timeout": "超时时间(秒)",
+                    "max_overshoot": "最大超调量(℃)",
+                },
                 "executor": self._case_1_temp_step_response,
             },
 
@@ -224,6 +237,11 @@ class TestBenchExecutor:
                     "target":           "in_car_temp",  # 故障注入目标传感器
                     "fault_type":       "OPEN_CIRCUIT", # 故障类型
                     "capture_timeout":   5.0,           # 捕获超时时间（秒）
+                },
+                "params_labels": {
+                    "target": "故障目标传感器",
+                    "fault_type": "故障类型",
+                    "capture_timeout": "捕获超时(秒)",
                 },
                 "executor": self._case_2_hardware_fault_diagnosis,
             },
@@ -241,6 +259,12 @@ class TestBenchExecutor:
                     "check_samples":   10,                # 统计均值所需样本数
                     "pm25_threshold":  50.0,              # PM2.5判定阈值（μg/m³）
                 },
+                "params_labels": {
+                    "scenario_name": "工况名称",
+                    "wait_time": "等待时长(秒)",
+                    "check_samples": "采样数量",
+                    "pm25_threshold": "PM2.5阈值(μg/m³)",
+                },
                 "executor": self._case_3_complex_scenario_anti_interference,
             },
 
@@ -252,6 +276,7 @@ class TestBenchExecutor:
                 "name":           "安全通信链路抗篡改测试",
                 "type":           "security",
                 "default_params": {},  # 无自定义参数
+                "params_labels": {},
                 "executor": self._case_4_aes_tamper_resistance,
             },
         }

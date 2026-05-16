@@ -554,6 +554,7 @@ def get_available_cases():
             "name":           meta["name"],
             "type":           meta["type"],
             "default_params": meta["default_params"],
+            "params_labels":  meta.get("params_labels", {}),
         }
         for case_id, meta in executor.registry.items()
     ]
