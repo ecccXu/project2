@@ -148,6 +148,17 @@ const getParamLabel = (key) => {
   }
   return key
 }
+
+const selectAllCases = () => {
+  const allIds = caseTemplates.value.map(c => c.id)
+  selectedCaseIds.value = [...allIds]
+}
+
+const invertCases = () => {
+  const allIds = caseTemplates.value.map(c => c.id)
+  const newSelection = allIds.filter(id => !selectedCaseIds.value.includes(id))
+  selectedCaseIds.value = [...newSelection]
+}
 // ==========================================
 // 打开新增用例弹窗
 // ==========================================
@@ -428,12 +439,20 @@ const handleBeforeClose = (done) => {
     try {
       await handleSaveReport()  // handleSaveReport 内部已包含关闭弹窗的逻辑
     } finally {
-      done()  // 保存完成后关闭弹窗
+      if (typeof done === 'function') {
+        done()  // 保存完成后关闭弹窗
+      } else {
+        reportVisible.value = false
+      }
     }
   }).catch((action) => {
     if (action === 'cancel') {
       // 用户点击了"不保存直接关闭"
-      done()
+      if (typeof done === 'function') {
+        done()
+      } else {
+        reportVisible.value = false
+      }
     }
     // action === 'close' 表示用户点击了确认框右上角的 X，什么都不做，保持在原弹窗
   })
@@ -628,7 +647,27 @@ onUnmounted(() => {
 
         <!-- 用例列表 -->
         <div class="panel-section panel-section-flex">
-          <span class="section-label">测试用例</span>
+          <div class="section-header">
+            <span class="section-label">测试用例</span>
+            <div class="select-actions">
+              <el-button
+                type="default"
+                size="small"
+                :disabled="benchStatus.is_running || caseTemplates.length === 0"
+                @click="selectAllCases"
+              >
+                全选
+              </el-button>
+              <el-button
+                type="default"
+                size="small"
+                :disabled="benchStatus.is_running || caseTemplates.length === 0"
+                @click="invertCases"
+              >
+                反选
+              </el-button>
+            </div>
+          </div>
           <div class="case-list">
             <div
               v-for="c in caseTemplates"
@@ -637,8 +676,8 @@ onUnmounted(() => {
               :class="{ 'is-active': getCaseStatus(c.id) === 'RUNNING' }"
             >
               <el-checkbox
+                :value="c.id"
                 v-model="selectedCaseIds"
-                :label="c.id"
                 :disabled="benchStatus.is_running"
               />
               <span
@@ -1110,6 +1149,40 @@ onUnmounted(() => {
   letter-spacing: 1px;
   margin-bottom: var(--spacing-2);
   font-weight: var(--font-weight-medium);
+}
+
+/* 区域头部 */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-2);
+}
+
+/* 全选/反选按钮容器 */
+.select-actions {
+  display: flex;
+  gap: var(--spacing-2);
+}
+
+.select-actions .el-button {
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.select-actions .el-button:hover:not(:disabled) {
+  background-color: var(--bg-primary);
+  border-color: var(--border-primary);
+  color: var(--text-primary);
+}
+
+.select-actions .el-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 用例列表 */
