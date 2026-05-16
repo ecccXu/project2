@@ -87,6 +87,7 @@ const reportChartInst = ref(null)
 // ==========================================
 const aiLoading = ref(false)
 const aiResult = ref('')
+const aiSaved = ref(false)
 // ==========================================
 // 节点列表获取
 // ==========================================
@@ -367,11 +368,103 @@ const fetchFinalReport = async () => {
 
 const handleSaveReport = async () => {
   try {
-    const res = await saveReport()
+    const payload = {}
+    // 检查是否有暂存的AI分析结果
+    const aiItem = reportData.value?.details?.find(d => d.case === '[AI] 智能分析结果')
+    if (aiItem && aiItem.details && aiItem.details.length > 0) {
+      payload.ai_analysis = aiItem.details[0]
+    }
+    const res = await saveReport(payload)
     ElMessage.success(`报告已保存，ID: ${res.report_id}`)
+    reportVisible.value = false
   } catch (e) {
     ElMessage.error('保存失败，请确认测试已结束')
   }
+}
+
+const saveAIResultDirect = () => {
+  if (!aiResult.value) return
+
+  // 将AI分析结果追加到当前报告的details中
+  if (reportData.value && reportData.value.details) {
+    // 先移除已有的AI分析记录
+    reportData.value.details = reportData.value.details.filter(
+      d => d.case !== '[AI] 智能分析结果'
+    )
+    // 追加新的AI分析结果
+    reportData.value.details.push({
+      case: '[AI] 智能分析结果',
+      status: 'INFO',
+      duration: 0,
+      details: [aiResult.value]
+    })
+    ElMessage.success('AI分析结果已暂存，请点击底部“保存报告”按钮完成完整保存')
+  } else {
+    ElMessage.warning('暂无法保存，请先执行测试')
+  }
+}
+
+const handleBeforeClose = (done) => {
+  ElMessageBox.confirm(
+    '此次测试报告尚未保存，是否保存后再关闭？',
+    '提示',
+    {
+      confirmButtonText: '保存并关闭',
+      cancelButtonText: '不保存直接关闭',
+      type: 'warning',
+      distinguishCancelAndClose: true,
+      closeOnClickModal: false
+    }
+  ).then(async () => {
+    // 用户点击了"保存并关闭"
+    try {
+      await handleSaveReport()  // handleSaveReport 内部已包含关闭弹窗的逻辑
+    } finally {
+      done()  // 保存完成后关闭弹窗
+    }
+  }).catch((action) => {
+    if (action === 'cancel') {
+      // 用户点击了"不保存直接关闭"
+      done()
+    }
+    // action === 'close' 表示用户点击了确认框右上角的 X，什么都不做，保持在原弹窗
+  })
+}
+
+const submitEditAI = () => {
+  if (!aiEditText.value) return
+  aiResult.value = aiEditText.value
+  aiEditing.value = false
+
+  // 编辑提交后同步更新到报告详情中
+  if (reportData.value && reportData.value.details) {
+    reportData.value.details = reportData.value.details.filter(
+      d => d.case !== '[AI] 智能分析结果'
+    )
+    reportData.value.details.push({
+      case: '[AI] 智能分析结果',
+      status: 'INFO',
+      duration: 0,
+      details: [aiResult.value]
+    })
+  }
+  ElMessage.success('AI分析已更新，请点击底部“保存报告”按钮完成完整保存')
+}
+
+// ==========================================
+// AI 分析编辑
+// ==========================================
+const aiEditing = ref(false)
+const aiEditText = ref('')
+
+const startEditAI = () => {
+  aiEditText.value = aiResult.value
+  aiEditing.value = true
+}
+
+const cancelEditAI = () => {
+  aiEditText.value = ''
+  aiEditing.value = false
 }
 
 const fetchAIAnalysis = async () => {
@@ -765,6 +858,7 @@ onUnmounted(() => {
       title="台架测试分析报告"
       width="80%"
       :close-on-click-modal="false"
+      :before-close="handleBeforeClose"
     >
       <div v-if="reportData">
         <el-row :gutter="24">
@@ -820,26 +914,85 @@ onUnmounted(() => {
           </el-col>
         </el-row>
 
-        <!-- AI 分析结果 -->
-        <div v-if="aiResult" style="margin-top: 20px; padding: 16px; background: #f8f9fb; border-radius: 8px; border: 1px solid var(--border-light);">
-          <div style="font-weight: var(--font-weight-semibold); margin-bottom: 12px; color: var(--text-primary);">
-            AI 分析结果
+                <!-- AI 分析结果 -->
+        <div style="margin-top: 20px; border-top: 1px solid var(--border-light); padding-top: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <span style="font-weight: var(--font-weight-semibold); color: var(--text-primary);">AI 分析结果</span>
+            <div style="display: flex; gap: 8px;">
+              <el-button
+                v-if="!aiResult"
+                type="primary"
+                size="small"
+                :loading="aiLoading"
+                @click="fetchAIAnalysis"
+              >
+                AI 分析
+              </el-button>
+              <el-button
+                v-else
+                size="small"
+                :loading="aiLoading"
+                @click="fetchAIAnalysis"
+              >
+                重新分析
+              </el-button>
+              <el-button
+                v-if="aiResult"
+                size="small"
+                type="success"
+                @click="saveAIResultDirect"
+              >
+                保存
+              </el-button>
+              <el-button
+                v-if="aiResult"
+                size="small"
+                text
+                type="primary"
+                @click="startEditAI"
+              >
+                编辑
+              </el-button>
+            </div>
           </div>
-          <div style="white-space: pre-wrap; line-height: 1.8; font-size: var(--font-sm); color: var(--text-secondary);">{{ aiResult }}</div>
+
+          <!-- 编辑模式 -->
+          <div v-if="aiEditing" style="margin-bottom: 12px;">
+            <el-input
+              v-model="aiEditText"
+              type="textarea"
+              :rows="8"
+              placeholder="编辑AI分析内容..."
+            />
+            <div style="margin-top: 8px; display: flex; gap: 8px;">
+              <el-button size="small" type="primary" @click="submitEditAI">提交修改</el-button>
+              <el-button size="small" @click="cancelEditAI">取消</el-button>
+            </div>
+          </div>
+
+          <!-- 查看模式 -->
+          <div
+            v-else-if="aiResult"
+            style="background: var(--bg-page); padding: 12px; border-radius: 8px; line-height: 1.8; white-space: pre-wrap; font-size: var(--font-sm); word-break: break-word;"
+          >
+            {{ aiResult }}
+          </div>
+
+          <div
+            v-else
+            style="color: var(--text-disabled); text-align: center; padding: 24px;"
+          >
+            点击"AI 分析"按钮生成智能分析报告
+          </div>
         </div>
       </div>
       <template #footer>
-        <div style="display: flex; justify-content: space-between; width: 100%;">
-          <el-button type="warning" @click="fetchAIAnalysis" :loading="aiLoading" plain>
-            AI 分析
+        <div style="display: flex; justify-content: flex-end; width: 100%;">
+          <el-button type="success" @click="handleSaveReport">
+            <el-icon style="margin-right: 4px"><Download /></el-icon>
+            保存报告
           </el-button>
-          <div>
-            <el-button type="success" @click="handleSaveReport">
-              <el-icon style="margin-right: 4px"><Download /></el-icon>
-              保存报告
-            </el-button>
-            <el-button @click="reportVisible = false">关闭</el-button>
-          </div>
+          <el-button @click="handleBeforeClose">关闭</el-button>
         </div>
       </template>
     </el-dialog>

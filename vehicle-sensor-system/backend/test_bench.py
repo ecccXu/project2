@@ -177,7 +177,7 @@ class TestBenchExecutor:
           2. 动态性能：响应时间、超调量      ← case_temp_step
           3. 故障诊断：FDI能力              ← case_fault_diagnosis
           4. 场景适应：复杂工况抗扰          ← case_scenario_anti
-          附加. 安全通信：数据完整性验证     ← case_aes_tamper
+          5. 安全通信：数据完整性验证     ← case_aes_tamper
         """
         return {
             # ------------------------------------------

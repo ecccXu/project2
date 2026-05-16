@@ -700,10 +700,10 @@ def remove_custom_case(case_id: str):
 # API路由：测试报告持久化
 # ==========================================
 @app.post("/api/reports/save", summary="保存测试报告到数据库")
-def save_report(db: Session = Depends(get_db)):
+def save_report(data: dict = None, db: Session = Depends(get_db)):
     """
-    将本次测试结果保存到数据库
-    建议在前端确认报告后调用
+    将本次测试结果保存到数据库，可选附带 AI 分析
+    data: {"ai_analysis": "AI分析文本"}
     """
     executor = app.state.executor
     if executor.is_running:
@@ -711,12 +711,26 @@ def save_report(db: Session = Depends(get_db)):
     if not executor.results:
         raise HTTPException(status_code=404, detail="暂无测试结果可保存")
 
-    results     = executor.results
+    results     = executor.results.copy()
     total       = len(results)
     pass_count  = sum(1 for r in results if r["status"] == "PASS")
     fail_count  = sum(1 for r in results if r["status"] == "FAIL")
     error_count = sum(1 for r in results if r["status"] == "ERROR")
     node_id     = getattr(executor, 'target_node_id', 'UNKNOWN')
+
+    # 检查请求体中是否有 AI 分析
+    ai_analysis = None
+    if data and isinstance(data, dict):
+        ai_analysis = data.get("ai_analysis")
+
+    # 如果有 AI 分析，追加入 results
+    if ai_analysis:
+        results.append({
+            "case": "[AI] 智能分析结果",
+            "status": "INFO",
+            "duration": 0,
+            "details": [ai_analysis]
+        })
 
     report = TestReport(
         report_name = f"{datetime.now().strftime('%Y-%m-%d %H:%M')} [{node_id}] 测试报告",

@@ -88,20 +88,48 @@ class CarEnvironmentSimulator:
             print(f"[WARN] 未知工况: {scenario_name}")
 
     def _inject_fault(self, params):
+        """
+        注入指定类型的硬件故障
+        支持通用故障和车载特有故障，共六种类型
+        """
         self.status = "FAULT"
         target = params.get("target")
         fault_type = params.get("fault_type")
 
         if fault_type == "STUCK":
+            # 卡死：传感器输出固定在指定数值不变
             self.fault_code = f"{target.upper()}_STUCK"
             self.overrides[target] = params.get("stuck_value", self.state.get(target, 0))
         elif fault_type == "OPEN_CIRCUIT":
+            # 断路：传感器输出固定为0
             self.fault_code = f"{target.upper()}_OPEN_CIRCUIT"
             self.overrides[target] = 0.0
         elif fault_type == "SHORT_CIRCUIT":
+            # 短路：传感器输出跳至量程最大值
             self.fault_code = f"{target.upper()}_SHORT_CIRCUIT"
             max_vals = {"pm25": 999, "co2": 5000, "in_car_temp": 80, "out_car_temp": 80, "humidity": 100}
             self.overrides[target] = max_vals.get(target, 999.0)
+        elif fault_type == "POWER_SAG":
+            # 电源电压跌落：传感器输出衰减至50%（模拟3.3V→1.8V）
+            self.fault_code = f"{target.upper()}_POWER_SAG"
+            current_val = self.state.get(target, 0)
+            self.overrides[target] = current_val * 0.5
+        elif fault_type == "I2C_BUS_OFF":
+            # I²C总线中断：传感器输出保持当前值不变（通信中断）
+            self.fault_code = f"{target.upper()}_I2C_BUS_OFF"
+            self.overrides[target] = self.state.get(target, 0)
+        elif fault_type == "THERMAL_SHOCK":
+            # 传感器热冲击：温度瞬间跳至105℃
+            if target in ("in_car_temp", "out_car_temp"):
+                self.fault_code = f"{target.upper()}_THERMAL_SHOCK"
+                self.overrides[target] = 105.0
+            else:
+                print(f"[WARN] 热冲击故障仅适用于温度传感器，当前目标: {target}")
+                return
+        else:
+            print(f"[WARN] 未知故障类型: {fault_type}")
+            return
+
         print(f"[INFO] 已注入故障: {self.fault_code}")
 
     def _clear_fault(self):
